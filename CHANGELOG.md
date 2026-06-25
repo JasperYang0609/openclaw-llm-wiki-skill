@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.5.1 — 2026-06-25 (same day patch)
+
+Adds `AGENTS.md` as the OpenAI Codex / ChatGPT Codex equivalent of `CLAUDE.md`. Now whichever agent runtime starts up inside a vault — Claude Code, Codex, or OpenClaw — auto-loads the same orientation pointer that directs it to `SCHEMA.md`. This matters because most existing daily-backup crons run on `openai-codex/gpt-5.5` and would otherwise miss the Claude-only file.
+
+Files added:
+- `openclaw-llm-wiki/templates/AGENTS.md` — mirror of `CLAUDE.md` with Codex-tailored framing
+- `init_vault.py` now scaffolds `AGENTS.md` alongside `CLAUDE.md`
+- `SKILL.md` updated: multi-agent-runtime row in alignment table moves from ⚠ deliberate divergence to ✅
+
 ## v0.5 — 2026-06-25
 
 Closes three gaps from a direct comparison against [Karpathy's LLM Wiki gist (v1, 2026-02)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) and [rohitg00's v2 fork](https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2). Adds three new features + a Karpathy alignment table.

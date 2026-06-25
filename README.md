@@ -68,7 +68,9 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
-**v0.5** — closes 3 Karpathy-v1/v2 alignment gaps: per-source `summaries/` folder (#20 Layer-2, default off), top-level `overview.md` synthesis page, lint check 13 for contradiction scanning. Also adds `CLAUDE.md` agent entry-point alias and a Karpathy alignment table in SKILL.md.
+**v0.5.1** — same-day patch adds `AGENTS.md` (OpenAI Codex equivalent of `CLAUDE.md`) so daily-backup crons running on Codex auto-load the vault orientation pointer.
+
+**v0.5** — closes 3 Karpathy-v1/v2 alignment gaps: per-source `summaries/` folder (#20 Layer-2, default off), top-level `overview.md` synthesis page, lint check 13 for contradiction scanning. Adds `CLAUDE.md` agent entry-point alias and a Karpathy alignment table in SKILL.md.
 
 **Pilot ordering**: Ansai's own vault first (faster feedback loop than waiting on Mifiya), then Mifiya, then other clients. First weekly prompt-tuning cron runs Mondays 09:37 Asia/Taipei → channel 1493072746702311474.
 

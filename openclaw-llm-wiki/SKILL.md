@@ -319,7 +319,8 @@ When new info conflicts with existing content:
 ## Bundled resources
 
 - `templates/SCHEMA.md` — domain-agnostic SCHEMA with placeholders, customized at init
-- `templates/CLAUDE.md` — agent entry-point pointer (auto-loaded by Claude Code / Codex / OpenClaw when an agent session starts in the vault directory)
+- `templates/CLAUDE.md` — agent entry-point pointer for Claude Code (auto-loaded when an agent session starts in the vault directory)
+- `templates/AGENTS.md` — agent entry-point pointer for OpenAI Codex / ChatGPT Codex (auto-loaded equivalent); mirrors CLAUDE.md so all daily-backup crons running on Codex find the vault schema correctly
 - `templates/index.md` — initial 20-category sectioned index
 - `templates/log.md` — initial log entry
 - `templates/overview.md` — top-level synthesis page, regenerated periodically (monthly cron)
@@ -349,7 +350,7 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 | Workflows Ingest / Query / Lint | ✅ Ingest delegated, Query Discord-first, Lint 13 checks |
 | `index.md` + `log.md` | ✅ both, with timestamped prefixes |
 | Wikilinks for cross-refs | ✅ AI auto-fills (no minimum enforced) |
-| Schema doc auto-loaded by agent | ✅ `CLAUDE.md` alias points at `SCHEMA.md` |
+| Schema doc auto-loaded by agent | ✅ `CLAUDE.md` (Claude Code) + `AGENTS.md` (Codex) aliases both point at `SCHEMA.md` |
 | Per-source summaries | ✅ optional `summaries/` Layer-2 folder (v0.5) |
 | Top-level overview page | ✅ `overview.md` (v0.5, regenerated periodically) |
 | Contradiction detection | ✅ frontmatter + lint check 13 (v0.5) |
@@ -357,7 +358,7 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 | Supersession of stale claims (v2) | ✅ stale-page lint + contradiction handling |
 | Output formats (table / Marp / chart) | ⚠ deliberate divergence — Discord-first list output only; complex outputs delegated to GPT / Notion |
 | Viewer (Obsidian / Dataview / qmd) | ⚠ deliberate divergence — vault is for AI, not humans; viewer not recommended |
-| Multi-agent runtime support | ⚠ OpenClaw-native; other agents work via `CLAUDE.md` alias but full skill is OpenClaw |
+| Multi-agent runtime support | ✅ OpenClaw-native + Claude Code via `CLAUDE.md` + OpenAI Codex via `AGENTS.md` |
 | Search engine | ⚠ uses `lancedb + grep` dual instead of `qmd` |
 
 ## Version

@@ -166,7 +166,7 @@ def main() -> int:
         "VAULT_PATH": str(vault),
     }
 
-    for filename in ("SCHEMA.md", "CLAUDE.md", "index.md", "log.md", "overview.md"):
+    for filename in ("SCHEMA.md", "CLAUDE.md", "AGENTS.md", "index.md", "log.md", "overview.md"):
         target = vault / filename
         if target.exists() and not args.overwrite:
             print(f"[skip] {target} already exists (use --overwrite to replace)")
