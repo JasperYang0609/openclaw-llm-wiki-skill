@@ -29,13 +29,24 @@ A page is gap-flagged if ANY of:
 1. `SCHEMA.md` and `_meta/active-folders.md`
 2. All vault pages in active Layer-2 folders
 3. `_meta/lint-config.yaml` — confirm `data_gap_local_only: true`
-4. Access to other configured local sources:
-   - Other vaults on the same OpenClaw deployment (if `_meta/cross-vault-allow.md` permits)
-   - `openclaw-lancedb-knowledge` index (semantic search)
+4. `_meta/cross-vault-allow.yaml` (if present) — **machine-readable allow-list** for sibling vaults. Schema:
+   ```yaml
+   # default deny: cross-vault is OFF unless the admin opts in here
+   version: 1
+   allowed_vaults:
+     - path: /Users/.../wiki/ansai
+       reason: shared methodology / case studies
+     - path: /Users/.../wiki/laike
+       reason: same engagement family
+   ```
+   If the file is absent OR `allowed_vaults` is empty/missing, treat cross-vault search as **denied** (this is the secure default — Hermes Round 3 finding).
+5. Access to other configured local sources, in priority order:
+   - `openclaw-lancedb-knowledge` index for THIS vault only (semantic search — runs locally; embeddings already computed; no NEW remote API call for the gap-fill itself)
    - `openclaw-discord-server-backup` outputs (Discord channel history summaries)
    - `*-daily-backup` summary files (per-team)
    - Notion ingest staging
-5. **Never** web search; **never** ask the user to web search; **never** call any external API beyond the local lancedb index and configured local sources
+   - Sibling vaults (only those in `_meta/cross-vault-allow.yaml`)
+6. **NEVER** web search; **NEVER** ask the user to web search; **NEVER** call any NEW external API for this lint pass. The existing lancedb embedding index for THIS vault is OK to read (no new embedding traffic). Calling Gemini to embed NEW gap-fill candidate text is **NOT** OK during lint — that would leak content to a remote API outside the user's awareness. If you need to embed new text, surface it as a "consultant manually re-index after review" recommendation instead of doing it automatically.
 
 ## Procedure
 

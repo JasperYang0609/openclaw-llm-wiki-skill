@@ -102,6 +102,8 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
+**v0.5.4** — Hermes Round 3 hardening pass: closes 2 sandbox blockers (rename `--allow-custom` path escape + `team`/`domain` prompt injection into CLAUDE/AGENTS), 6 important findings (LanceDB path injection, git failure now FATAL, `check_should_build` now scans all source roots, `cross-vault-allow.yaml` schema, Karpathy v2 over-claim downgraded, LAYER2 single-source-of-truth manifest), 3 minor (lint `--fail-on-issues`, cross-refs confidence truth table, stale log template). 27 pytest tests added, all green. Approved for Ansai-internal pilot; **not yet** for米菲亞/external.
+
 **v0.5.3** — production-readiness audit pass: fixes 9 real bugs the consistency pass missed. Highlights: lint path display now actually vault-relative; two-step confirm now actually compares the typed name; `git add -A` removed (no more sweeping user WIP into schema commits); `op_rename` validates `dst`; `parse_strict_tags` regex now matches checkbox-prefixed lines; YAML block-list tags now parse correctly; README quickstart added; aspirational `@knowledge` Discord triggers labeled "planned for v0.6" everywhere.
 
 **v0.5.2** — same-day audit pass: fixes 20 inconsistencies (folder counts 19→20, lint count 12→13, AGENTS.md missing from lint skip list, 6 more Python 3.9 `parents[-2]` crash sites). Smoke-tested clean.
@@ -117,7 +119,16 @@ Outstanding:
 - v0.6 prompt tuning based on Ansai pilot data
 - v0.6 `overview.md` auto-regeneration cron (monthly)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.3 trail.
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.4 trail. Independent code review: [`REVIEW_BRIEF.md`](REVIEW_BRIEF.md) (round-3 brief sent to Hermes).
+
+## Tests
+
+```bash
+pip install pytest
+pytest tests/
+```
+
+27 tests across slug validation, prompt-injection containment, sandbox escape, lint exit codes, and end-to-end init. Required Python 3.9+ and `git`.
 
 ## Safety
 

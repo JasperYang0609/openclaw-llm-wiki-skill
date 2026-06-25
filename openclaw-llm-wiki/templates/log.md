@@ -10,4 +10,4 @@
 - Domain: {{DOMAIN_DESCRIPTION}}
 - Vault path: {{VAULT_PATH}}
 - LanceDB project: {{TEAM_NAME}}
-- Structure created: SCHEMA.md, index.md, log.md, raw/, entities/, concepts/, comparisons/, syntheses/, queries/
+- Structure created: SCHEMA.md, CLAUDE.md, AGENTS.md, index.md, log.md, overview.md, _meta/, inbox/, and the team's enabled Layer-2 folders (see `_meta/active-folders.md`)

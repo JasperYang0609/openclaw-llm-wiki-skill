@@ -353,9 +353,9 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 | Schema doc auto-loaded by agent | ✅ `CLAUDE.md` (Claude Code) + `AGENTS.md` (Codex) aliases both point at `SCHEMA.md` |
 | Per-source summaries | ✅ optional `summaries/` Layer-2 folder (v0.5) |
 | Top-level overview page | ✅ `overview.md` (v0.5, regenerated periodically) |
-| Contradiction detection | ✅ frontmatter + lint check 13 (v0.5) |
-| Confidence scoring (v2 add-on) | ✅ `confidence` frontmatter field (D17) |
-| Supersession of stale claims (v2) | ✅ stale-page lint + contradiction handling |
+| Contradiction tracking | ⚠ Partial — frontmatter `contradictions: [target]` + lint check 13 validates flagged pairs. We do not yet **detect** contradictions automatically (that needs an AI claim-level diff pass; v0.6+). |
+| Confidence scoring (v2 add-on) | ⚠ Partial — page-level `confidence: low\|medium\|high` frontmatter field. Karpathy v2 envisages claim-level scoring; we are coarser. |
+| Supersession of stale claims (v2) | ⚠ Partial — `check_stale` (>90 days) + manual archive workflow. No automatic supersession on contradiction; v0.6 plan: add claim-level `superseded_by`, `effective_from` and an AI conflict pass. |
 | Output formats (table / Marp / chart) | ⚠ deliberate divergence — Discord-first list output only; complex outputs delegated to GPT / Notion |
 | Viewer (Obsidian / Dataview / qmd) | ⚠ deliberate divergence — vault is for AI, not humans; viewer not recommended |
 | Multi-agent runtime support | ✅ OpenClaw-native + Claude Code via `CLAUDE.md` + OpenAI Codex via `AGENTS.md` |
@@ -363,7 +363,7 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 
 ## Version
 
-v0.5 — adds Karpathy alignment fills: per-source `summaries/` folder, top-level `overview.md`, `CLAUDE.md` agent entry-point alias, contradictions lint check 13. Total Layer-2 folders now 20 (added `summaries/`).
+v0.5.4 — Hermes Round 3 hardening: sandbox-validated rename, prompt-injection-safe template rendering, fail-loud git semantics, single-source-of-truth manifest, 27 pytest tests. See CHANGELOG. Layer-2 = 20, lint checks = 13, agent aliases = CLAUDE.md + AGENTS.md.
 
 Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. The first weekly prompt-tuning cron runs Mondays at 09:37 Asia/Taipei and reports to channel 1493072746702311474.
 

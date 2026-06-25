@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-lint.py — openclaw-llm-wiki v0.5 lint runner.
+lint.py — openclaw-llm-wiki v0.5.4 lint runner.
 
-Runs the 13 checks defined in the SKILL.md and writes a grouped report.
-Schema-level checks (1-9 + 13) are fully implemented. Karpathy-pattern checks
-(10-12) that require AI are stubbed with explicit "requires AI runtime" markers
-— invoke those from inside an OpenClaw agent session rather than the bare CLI.
+Runs the 13 checks defined in SKILL.md and writes a grouped report.
+Schema-level checks (1-9 + 13) are fully implemented. Approximation check 10
+(`should_build_but_not_built`) is keyword-based. AI-required checks 11-12 are
+stubbed with explicit "requires AI runtime" markers — invoke those from inside
+an agent session rather than the bare CLI.
 
-Check 13 (contradictions) was added in v0.5 to scan for unresolved contradictions
-flagged in page frontmatter — close a gap noted in the Karpathy-pattern review.
+v0.5.4: pulls LAYER2/types/required-frontmatter from `_manifest` (single source
+of truth). Adds `--fail-on-issues` so cron + CI can fail loudly. Fixes
+`check_should_build` to scan ALL source roots, not just the first one found.
 
 Usage:
     python3 lint.py --vault-path ~/.openclaw/wiki/team
@@ -25,16 +27,9 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-REQUIRED_FRONTMATTER = {
-    "title", "created", "updated", "type", "tags", "sources",
-    "confidence", "wikilinks_confidence", "categories",
-}
-LAYER2_TYPES = {
-    "decision", "sop", "customer", "product", "contact", "person",
-    "concept", "comparison", "synthesis", "query",
-    "brand", "policy", "deliverable", "meeting", "incident",
-    "metric", "vendor", "template", "glossary", "summary",
-}
+# Make sibling _manifest importable when invoked by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _manifest import REQUIRED_FRONTMATTER, LAYER2_TYPES, LINT_CHECK_NAMES, SKILL_VERSION  # noqa: E402
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
@@ -282,23 +277,38 @@ def check_lancedb_freshness(vault):
 
 
 def check_should_build(vault, pages, min_sources):
-    """Approximate: scan raw source folders for #hashtags and [[wikilink]]-style mentions
-    that appear in >= min_sources files but have no page. Full AI version requires
-    an LLM and lives in the OpenClaw agent runtime."""
-    raw_root = None
-    for candidate in ("inbox", "raw", "raw/transcripts", "raw/articles"):
-        path = vault / candidate
-        if path.exists():
-            raw_root = path
-            break
-    if raw_root is None:
-        return {"status": "no source folder found; nothing to check"}
+    """Approximate: scan ALL configured source folders (not just the first) for
+    #hashtags and [[wikilink]]-style mentions that appear in >= min_sources
+    files but have no page. Hermes Round 3 caught the v0.5.3 bug where this
+    function returned after finding `inbox` and therefore never scanned `raw/*`.
+
+    Full AI version requires an LLM and lives in the OpenClaw agent runtime
+    (see prompts/lint_missing_cross_refs.md / lint_data_gaps.md).
+    """
+    # All conventional source roots — scan every one that exists, then dedupe by
+    # actual file path so nested roots (raw/, raw/articles/) don't double-count.
+    candidate_roots = [
+        vault / "inbox",
+        vault / "raw",
+        vault / "raw" / "transcripts",
+        vault / "raw" / "articles",
+    ]
+    source_files: set[Path] = set()
+    for root in candidate_roots:
+        if root.exists():
+            for src in root.rglob("*.md"):
+                source_files.add(src.resolve())
+    if not source_files:
+        return {"status": "no source folder found (looked under inbox/ and raw/*); nothing to check"}
 
     existing_stems = {p.stem for p in pages}
     mention_counts: dict[str, set] = defaultdict(set)
     candidate_re = re.compile(r"#([\w\-]{3,40})|\[\[([^\]|]+)\]\]")
-    for src in raw_root.rglob("*.md"):
-        text = src.read_text(encoding="utf-8")
+    for src in source_files:
+        try:
+            text = src.read_text(encoding="utf-8")
+        except OSError:
+            continue
         for hashtag, wikilink in candidate_re.findall(text):
             cand = (hashtag or wikilink).strip()
             mention_counts[cand].add(str(src))
@@ -308,7 +318,8 @@ def check_should_build(vault, pages, min_sources):
         if len(srcs) >= min_sources and cand not in existing_stems
     ]
     return {
-        "method": "keyword-approximation (full AI version requires OpenClaw agent runtime)",
+        "method": "keyword-approximation across all source roots (full AI version requires OpenClaw agent runtime)",
+        "source_files_scanned": len(source_files),
         "candidates": sorted(candidates, key=lambda x: -x["mention_count"])[:50],
     }
 
@@ -379,8 +390,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vault-path", required=True)
     parser.add_argument("--auto-fix", action="store_true", help="Apply auto-fixes for cross-ref check (no-op in CLI; requires OpenClaw agent runtime)")
-    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
+    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON to stdout (warnings to stderr)")
     parser.add_argument("--no-log", action="store_true", help="Do not append summary to log.md")
+    parser.add_argument("--fail-on-issues", action="store_true",
+                        help="Exit non-zero if any schema-level check found issues (for CI / cron)")
     args = parser.parse_args()
 
     vault = Path(args.vault_path).expanduser().resolve()
@@ -415,34 +428,60 @@ def main() -> int:
         },
     }
 
+    # Count issues across both list-shaped findings AND dict-shaped findings
+    # that have a clear "issue" signal (index_drift entries, contradictions
+    # already list-shaped, lancedb_freshness `stale: true`, log_size needs_rotation).
+    def _is_issue(name: str, finding) -> int:
+        if isinstance(finding, list):
+            return len(finding)
+        if not isinstance(finding, dict):
+            return 0
+        if name == "index_drift":
+            return len(finding.get("in_vault_not_in_index", [])) + len(finding.get("in_index_not_in_vault", []))
+        if name == "log_size":
+            return 1 if finding.get("needs_rotation") else 0
+        if name == "lancedb_freshness":
+            return 1 if finding.get("stale") else 0
+        if name == "should_build_but_not_built":
+            return len(finding.get("candidates", []))
+        return 0  # stub / status-only
+
+    per_check_counts = {name: _is_issue(name, f) for name, f in report["checks"].items()}
+    total_issues = sum(per_check_counts.values())
+    report["total_issues"] = total_issues
+    report["per_check_counts"] = per_check_counts
+
     if args.json:
+        # JSON to stdout; any warnings should already be on stderr.
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
-        print(f"vault: {vault} ({len(pages)} pages)\n")
+        print(f"vault: {vault} ({len(pages)} pages; {total_issues} total issues)\n")
         for name, finding in report["checks"].items():
+            count = per_check_counts.get(name, 0)
             if isinstance(finding, list):
-                print(f"  [{name}] {len(finding)} issue(s)")
+                print(f"  [{name}] {count} issue(s)")
                 for item in finding[:5]:
                     print(f"    - {item}")
                 if len(finding) > 5:
                     print(f"    ... (+{len(finding)-5} more)")
             else:
-                print(f"  [{name}] {finding}")
+                status = "" if count == 0 else f" ({count} issue(s))"
+                print(f"  [{name}]{status} {finding}")
 
     if not args.no_log:
-        issue_count = sum(
-            len(v) if isinstance(v, list) else 0 for v in report["checks"].values()
-        )
         date = datetime.date.today().isoformat()
         log_path = vault / "log.md"
         if log_path.exists():
             with log_path.open("a", encoding="utf-8") as f:
                 f.write(
-                    f"\n## [{date}] lint | {issue_count} schema issues | "
+                    f"\n## [{date}] lint | {total_issues} schema issues | "
                     f"AI checks pending: missing_cross_refs, data_gaps "
-                    f"(invoke via Skill openclaw-llm-wiki agent turn)\n"
+                    f"(invoke via `Skill openclaw-llm-wiki` agent turn)\n"
                 )
 
+    if args.fail_on_issues and total_issues > 0:
+        print(f"[fail-on-issues] {total_issues} schema issue(s) found; exiting non-zero", file=sys.stderr)
+        return 1
     return 0
 
 

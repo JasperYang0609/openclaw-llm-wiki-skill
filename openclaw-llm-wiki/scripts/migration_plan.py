@@ -1,24 +1,23 @@
 #!/usr/bin/env python3
 """
-migration_plan.py — preview schema-change impact before applying (v0.5).
+migration_plan.py — preview schema-change impact before applying (v0.5.4).
 
 Implements the "preview impact before commit" guardrail (F24 #2 from the
 2026-06-25 alignment). Dry-run only by default; `--apply` will actually mutate
 the vault but is gated behind a two-step confirmation.
+
+v0.5.4 (Hermes Round 3 hardening):
+- `rename --allow-custom` still validates `dst` is a slug AND resolves inside
+  vault (no more `..` / absolute path escape).
+- Git commit failure on `--apply` ops is now FATAL (non-zero exit) — preserves
+  the "Git auto-commit always on" rollback contract.
+- LAYER2 list pulled from `_manifest` (single source of truth).
 
 Supported operations:
     enable <folder>             — activate one of the 20 Layer-2 folders
     disable <folder>            — deactivate (counts pages + inbound links)
     rename <from> <to>          — rename a Layer-2 folder (counts files + wikilinks)
     add-frontmatter-field <key> — count pages missing it; suggest backfill
-
-All operations write a Git-committed change when --apply is used, so rollback
-is always possible via `git revert`.
-
-Usage:
-    python3 migration_plan.py --vault-path ~/.openclaw/wiki/mifiya enable policies
-    python3 migration_plan.py --vault-path ~/.openclaw/wiki/mifiya disable vendors
-    python3 migration_plan.py --vault-path ~/.openclaw/wiki/mifiya rename customers clients --apply
 """
 from __future__ import annotations
 
@@ -28,12 +27,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-LAYER2 = [
-    "decisions", "sops", "customers", "products", "contacts",
-    "people", "concepts", "comparisons", "syntheses", "queries",
-    "brand", "policies", "deliverables", "meetings", "incidents",
-    "metrics", "vendors", "templates", "glossary", "summaries",
-]
+# Make sibling _manifest importable when invoked by path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _manifest import (  # noqa: E402
+    ALL_LAYER2, SKILL_VERSION,
+    ValidationError, validate_slug, safe_resolve_inside,
+)
+LAYER2 = list(ALL_LAYER2)
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -85,33 +85,39 @@ def update_active_folders(vault: Path, folder: str, active: bool) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> None:
-    """Commit specific paths (relative to vault). If `paths` is None, commits
-    nothing — never `git add -A` here, to avoid sweeping unrelated dirty changes
-    into a schema-level commit.
+def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> bool:
+    """Commit specific paths (relative to vault). Returns True on success.
 
-    If `paths` is provided, only those are staged. Use `["."]` only when you
-    intentionally want everything (rare; prefer enumerating).
+    Never `git add -A` — schema-level commits must not sweep user's dirty WIP.
+    On `--apply` operations, callers MUST treat False as fatal (exit non-zero)
+    to preserve the rollback contract.
     """
     if not (vault / ".git").exists():
-        print("[warn] vault is not a git repo; cannot auto-commit (run `git init` in the vault, or rerun init_vault.py without --skip-git)")
-        return
+        print("[error] vault is not a git repo; cannot auto-commit. "
+              "Rerun init_vault.py without --skip-git, or `git init` in the vault.",
+              file=sys.stderr)
+        return False
     if not paths:
-        print("[warn] git_commit called without paths; skipping commit (would have swept dirty WIP)")
-        return
+        print("[error] git_commit called without paths; refusing to sweep dirty WIP",
+              file=sys.stderr)
+        return False
+    # Preflight identity
+    check_user = subprocess.run(
+        ["git", "config", "user.email"], cwd=str(vault), check=False, capture_output=True,
+    )
+    if check_user.returncode != 0 or not check_user.stdout.strip():
+        print("[error] git commit aborted: no `user.email` configured. "
+              "Run `git config --global user.email <you@example.com>` (and user.name).",
+              file=sys.stderr)
+        return False
     subprocess.run(["git", "add", "--"] + paths, cwd=str(vault), check=False)
     rc = subprocess.run(["git", "commit", "-q", "-m", msg], cwd=str(vault), check=False).returncode
     if rc == 0:
         print(f"[git] committed: {msg}")
-    else:
-        # Differentiate the two common failure modes
-        check_user = subprocess.run(
-            ["git", "config", "user.email"], cwd=str(vault), check=False, capture_output=True,
-        )
-        if check_user.returncode != 0 or not check_user.stdout.strip():
-            print("[warn] git commit failed: no `user.email` configured. Run `git config user.email <you@example.com>` (and user.name) in the vault, then retry.")
-        else:
-            print("[warn] git commit failed: probably no changes to commit (already clean).")
+        return True
+    print(f"[error] git commit failed (rc={rc}); check `git status` in {vault}",
+          file=sys.stderr)
+    return False
 
 
 # ---- operations ------------------------------------------------------------
@@ -141,12 +147,12 @@ def op_enable(vault: Path, folder: str, apply: bool) -> int:
     keep = target / ".gitkeep"
     if not keep.exists():
         keep.write_text("", encoding="utf-8")
-    git_commit(
+    ok = git_commit(
         vault,
         f"schema: enable {folder}/",
         paths=[f"{folder}/.gitkeep", "_meta/active-folders.md"],
     )
-    return 0
+    return 0 if ok else 3
 
 
 def op_disable(vault: Path, folder: str, apply: bool) -> int:
@@ -182,26 +188,36 @@ def op_disable(vault: Path, folder: str, apply: bool) -> int:
     archive.parent.mkdir(parents=True, exist_ok=True)
     target.rename(archive)
     update_active_folders(vault, folder, active=False)
-    git_commit(
+    ok = git_commit(
         vault,
         f"schema: disable {folder}/ (archived {len(pages)} pages; {inbound} links may break)",
         paths=[f"_archive/{folder}", folder, "_meta/active-folders.md"],
     )
-    return 0
+    return 0 if ok else 3
 
 
 def op_rename(vault: Path, src: str, dst: str, apply: bool, allow_custom: bool = False) -> int:
     if src not in LAYER2:
         print(f"source folder '{src}' is not a known Layer-2 folder. Must be one of: {', '.join(LAYER2)}", file=sys.stderr)
         return 1
-    if dst not in LAYER2 and not allow_custom:
-        print(
-            f"destination folder '{dst}' is not a known Layer-2 folder. "
-            f"Pass --allow-custom to bypass (rare; usually means schema drift). "
-            f"Known folders: {', '.join(LAYER2)}",
-            file=sys.stderr,
-        )
-        return 1
+    if dst not in LAYER2:
+        if not allow_custom:
+            print(
+                f"destination folder '{dst}' is not a known Layer-2 folder. "
+                f"Pass --allow-custom to bypass (rare; usually means schema drift). "
+                f"Known folders: {', '.join(LAYER2)}",
+                file=sys.stderr,
+            )
+            return 1
+        # --allow-custom: still require slug grammar AND resolved path stays in vault.
+        # Without this, `dst = "../escape"` or `dst = "/etc"` would move the folder
+        # outside the vault sandbox (Hermes Round 3 blocker).
+        try:
+            validate_slug(dst, "rename dst (--allow-custom)")
+            safe_resolve_inside(vault, dst, "rename dst (--allow-custom)")
+        except ValidationError as e:
+            print(f"[error] --allow-custom dst rejected: {e}", file=sys.stderr)
+            return 2
     src_path = vault / src
     if not src_path.exists():
         print(f"source folder {src}/ does not exist in {vault}.", file=sys.stderr)
@@ -233,13 +249,13 @@ def op_rename(vault: Path, src: str, dst: str, apply: bool, allow_custom: bool =
     src_path.rename(vault / dst)
     update_active_folders(vault, src, active=False)
     update_active_folders(vault, dst, active=True)
-    git_commit(
+    ok = git_commit(
         vault,
         f"schema: rename {src}/ → {dst}/ ({len(pages)} pages; {wikilink_hits} links to review)",
         paths=[src, dst, "_meta/active-folders.md"],
     )
     print("\n[manual step] Update wikilinks that pointed at pages inside the old folder.")
-    return 0
+    return 0 if ok else 3
 
 
 def op_add_field(vault: Path, key: str, apply: bool) -> int:
