@@ -1,8 +1,9 @@
 # Lint check 12 — data gaps (local-only auto-fill, never web search)
 
-> Triggered by `@knowledge lint` from inside an OpenClaw agent session, or as the
-> data-gap pass of the weekly `lint.py` cron. The Python `lint.py` stubs this check
-> and points here.
+> Triggered by `Skill openclaw-llm-wiki` inside an agent session (or the
+> planned-for-v0.6 `@knowledge lint` Discord shortcut), as the data-gap pass of
+> the weekly `lint.py` cron. The Python `lint.py` stubs this check and points
+> here.
 
 ## Goal
 

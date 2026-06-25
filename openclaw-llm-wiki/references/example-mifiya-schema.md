@@ -118,7 +118,7 @@ Standard rule: 1 source + AI substance filter. Mifiya-specific exceptions and em
 
 ## Lint configuration
 
-- Weekly cron (Sunday 02:00) + on-demand via Discord (`@智庫 lint`)
+- Weekly cron (Sunday 02:00) + on-demand. Discord shortcut `@智庫 lint` is planned for v0.6 — meanwhile invoke `Skill openclaw-llm-wiki` in a Codex/Claude agent turn, or run `scripts/lint.py` directly.
 - Should-build threshold: 2 sources (default; raise to 3 if inbox volume explodes)
 - Data-gap auto-fill: local-only (never web-search)
 - Cross-ref auto-fill: enabled (no admin review)

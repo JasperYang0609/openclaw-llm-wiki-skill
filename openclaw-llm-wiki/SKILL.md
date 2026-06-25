@@ -201,7 +201,7 @@ If the dual search returns weak hits, say so explicitly and either widen the sea
 
 ### Lint (cron + on-demand)
 
-Run weekly cron + admin can trigger anytime via Discord (`@knowledge lint`).
+Run weekly cron + admin can trigger anytime. The eventual Discord trigger phrasing is `@knowledge lint` (and `@智庫 lint` for Chinese-language deployments), but **the bot/agent router that wires Discord mentions to this skill is planned for v0.6 and not in this repo yet**. Today, invoke via `Skill openclaw-llm-wiki ...` inside a Codex or Claude Code turn, or call `scripts/lint.py` from a cron.
 
 **Schema-level checks:**
 1. **Broken wikilinks** — `[[target]]` where target doesn't exist
@@ -241,7 +241,7 @@ After onboarding, the client admin can self-serve schema changes (add categories
 Vaults are Git-tracked from initialization. Every action (page create / update / delete / schema change) is auto-committed. Consultants don't need to know Git commands — the skill wraps it transparently.
 
 - Conflicts trigger automatic merge attempt; on failure, prompts admin
-- Rollback path: any past commit can be restored via `@knowledge rollback <commit-id>`
+- Rollback path: any past commit can be restored via `git checkout <commit-id>` in the vault (the `@knowledge rollback <commit-id>` shorthand is planned for v0.6 alongside the Discord router)
 
 ### Privacy / embedding
 
@@ -338,7 +338,7 @@ Lint checks 11 (`missing_cross_refs`) and 12 (`data_gaps`) require AI reasoning 
 - `prompts/lint_missing_cross_refs.md` — auto-add wikilinks between related pages (D16 / E19 authorized batch auto-fill; no per-pair approval)
 - `prompts/lint_data_gaps.md` — fill skeletal pages from **local sources only** (lancedb / Discord backups / daily-backup / Notion / sibling vaults if permitted). **Never web-search** (E20 mode b is forbidden).
 
-When the user triggers `@knowledge lint --auto-fix` in Discord (or as part of the weekly cron), the agent reads these prompt files and executes them against the vault. Both prompts include hard guardrails (skip `inbox/_archive/_meta`, Git auto-commit, never fabricate, etc.).
+When invoked inside an agent runtime (`Skill openclaw-llm-wiki ...` or the planned-for-v0.6 Discord `@knowledge lint --auto-fix` trigger), the agent reads these prompt files and executes them against the vault. Both prompts include hard guardrails (skip `inbox/_archive/_meta`, Git auto-commit, never fabricate, etc.).
 
 ## Karpathy v1 / v2 alignment
 

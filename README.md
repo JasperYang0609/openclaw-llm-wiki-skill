@@ -32,12 +32,46 @@ This skill is **not** a replacement for Notion / Drive / Chat. It complements th
 
 ## Install
 
+Requires Python 3.9+ and `git`. Lancedb integration is optional on day 1 (text grep still works).
+
 ```bash
 git clone https://github.com/JasperYang0609/openclaw-llm-wiki-skill.git
 cp -R openclaw-llm-wiki-skill/openclaw-llm-wiki ~/.openclaw/workspace/skills/
 ```
 
-Install [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/openclaw-lancedb-knowledge-skill) first so search is available, then ingest sources via [`openclaw-discord-server-backup`](https://github.com/JasperYang0609/openclaw-discord-server-backup) and the team's daily-backup cron.
+(Optional) install the sibling skills for full functionality:
+- [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/openclaw-lancedb-knowledge-skill) — semantic search
+- [`openclaw-discord-server-backup`](https://github.com/JasperYang0609/openclaw-discord-server-backup) — Discord channel ingest
+
+## Quickstart
+
+Initialize a vault for a team (default location `~/.openclaw/wiki/team/`, default folders Core 10 + `brand/`):
+
+```bash
+python3 ~/.openclaw/workspace/skills/openclaw-llm-wiki/scripts/init_vault.py \
+    --vault-path ~/.openclaw/wiki/mifiya \
+    --team mifiya \
+    --domain "Mifiya consulting team — brand, customers, methods, SOPs" \
+    --skip-lancedb     # drop this flag once openclaw-lancedb-knowledge is installed
+```
+
+Enable extra folders at init time with `--enable policies --enable deliverables`, or enable later via `scripts/migration_plan.py`.
+
+Run health-check anytime:
+
+```bash
+python3 ~/.openclaw/workspace/skills/openclaw-llm-wiki/scripts/lint.py \
+    --vault-path ~/.openclaw/wiki/mifiya
+```
+
+Preview a schema change (dry-run; add `--apply` to commit):
+
+```bash
+python3 ~/.openclaw/workspace/skills/openclaw-llm-wiki/scripts/migration_plan.py \
+    --vault-path ~/.openclaw/wiki/mifiya enable policies
+```
+
+> **Discord triggers** like `@knowledge lint` / `@智庫 lint` are referenced in SKILL.md as the eventual operator UX. The Discord/agent router that wires those mentions to this skill is **planned for v0.6 and is not in this repo**. For now, invoke the skill via your agent runtime (`Skill openclaw-llm-wiki ...` inside a Codex or Claude Code turn) or run the Python scripts directly as shown above.
 
 ## Contents
 
@@ -68,6 +102,8 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
+**v0.5.3** — production-readiness audit pass: fixes 9 real bugs the consistency pass missed. Highlights: lint path display now actually vault-relative; two-step confirm now actually compares the typed name; `git add -A` removed (no more sweeping user WIP into schema commits); `op_rename` validates `dst`; `parse_strict_tags` regex now matches checkbox-prefixed lines; YAML block-list tags now parse correctly; README quickstart added; aspirational `@knowledge` Discord triggers labeled "planned for v0.6" everywhere.
+
 **v0.5.2** — same-day audit pass: fixes 20 inconsistencies (folder counts 19→20, lint count 12→13, AGENTS.md missing from lint skip list, 6 more Python 3.9 `parents[-2]` crash sites). Smoke-tested clean.
 
 **v0.5.1** — same-day patch adds `AGENTS.md` (OpenAI Codex equivalent of `CLAUDE.md`) so daily-backup crons running on Codex auto-load the vault orientation pointer.
@@ -81,7 +117,7 @@ Outstanding:
 - v0.6 prompt tuning based on Ansai pilot data
 - v0.6 `overview.md` auto-regeneration cron (monthly)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.2 trail.
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.3 trail.
 
 ## Safety
 

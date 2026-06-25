@@ -38,7 +38,8 @@ LAYER2_TYPES = {
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
-TAG_LINE_RE = re.compile(r"^\s*-\s*`([^`]+)`")
+# Allow optional GFM checkbox prefix: `- [ ]` or `- [x]` before the backticked tag
+TAG_LINE_RE = re.compile(r"^\s*-\s*(?:\[[ xX]\]\s*)?`([^`]+)`")
 HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -76,15 +77,48 @@ def load_config(meta_dir: Path) -> dict:
 
 
 def parse_frontmatter(text: str) -> dict | None:
+    """Tolerant YAML-frontmatter parser. Handles:
+    - `key: value` inline scalars
+    - `key:` followed by indented `  - item` block lists (converted to comma-joined str)
+    - `key: [a, b, c]` inline flow lists (left as-is for downstream regex extraction)
+    Not a full YAML parser — only what this lint actually consumes.
+    """
     m = FRONTMATTER_RE.match(text)
     if not m:
         return None
     fm: dict = {}
-    for line in m.group(1).splitlines():
-        if ":" not in line:
+    lines = m.group(1).splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if ":" not in line or line.lstrip().startswith("#"):
+            i += 1
             continue
         key, _, value = line.partition(":")
-        fm[key.strip()] = value.strip()
+        key = key.strip()
+        value = value.strip()
+        if value == "":
+            # collect block-list continuation lines: `  - foo`
+            collected: list[str] = []
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j]
+                stripped = nxt.lstrip()
+                if stripped.startswith("- "):
+                    collected.append(stripped[2:].strip())
+                    j += 1
+                elif nxt.startswith(" ") or nxt.startswith("\t"):
+                    j += 1  # other indented line, skip
+                else:
+                    break
+            if collected:
+                fm[key] = ", ".join(collected)
+            else:
+                fm[key] = ""
+            i = j
+            continue
+        fm[key] = value
+        i += 1
     return fm
 
 
@@ -130,39 +164,43 @@ def page_stem_to_path(vault: Path, pages: list[Path]) -> dict[str, Path]:
 
 # ---- checks ----------------------------------------------------------------
 
-def check_broken_wikilinks(pages, stem_to_path):
+def rel(vault: Path, page: Path) -> str:
+    """Vault-relative POSIX path for human-readable output."""
+    return page.relative_to(vault).as_posix()
+
+
+def check_broken_wikilinks(vault, pages, stem_to_path):
     findings = []
     for page in pages:
         text = strip_comments(page.read_text(encoding="utf-8"))
         for target in set(WIKILINK_RE.findall(text)):
             if target not in stem_to_path:
-                findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])),
-                                 "target": target})
+                findings.append({"page": rel(vault, page), "target": target})
     return findings
 
 
-def check_orphans(pages, stem_to_path):
+def check_orphans(vault, pages, stem_to_path):
     inbound = Counter()
     for page in pages:
         for target in set(WIKILINK_RE.findall(strip_comments(page.read_text(encoding="utf-8")))):
             inbound[target] += 1
-    return [str(p.relative_to(p.parents[len(p.parents)-2])) for p in pages if inbound[p.stem] == 0]
+    return [rel(vault, p) for p in pages if inbound[p.stem] == 0]
 
 
-def check_frontmatter_missing(pages):
+def check_frontmatter_missing(vault, pages):
     findings = []
     for page in pages:
         fm = parse_frontmatter(page.read_text(encoding="utf-8"))
         if fm is None:
-            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "missing": "all (no frontmatter block)"})
+            findings.append({"page": rel(vault, page), "missing": "all (no frontmatter block)"})
             continue
         missing = REQUIRED_FRONTMATTER - set(fm.keys())
         if missing:
-            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "missing": sorted(missing)})
+            findings.append({"page": rel(vault, page), "missing": sorted(missing)})
     return findings
 
 
-def check_tag_drift(pages, strict_tags):
+def check_tag_drift(vault, pages, strict_tags):
     findings = []
     if not strict_tags:
         return findings  # nothing to enforce
@@ -173,7 +211,7 @@ def check_tag_drift(pages, strict_tags):
         used_strict_candidates = [t for t in tags if t.startswith(("customer-", "product-", "type-"))]
         drift = [t for t in used_strict_candidates if t not in strict_tags]
         if drift:
-            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "unregistered_strict_tags": drift})
+            findings.append({"page": rel(vault, page), "unregistered_strict_tags": drift})
     return findings
 
 
@@ -190,7 +228,7 @@ def check_index_drift(vault, pages):
     }
 
 
-def check_stale(pages, max_days):
+def check_stale(vault, pages, max_days):
     today = datetime.date.today()
     findings = []
     for page in pages:
@@ -201,17 +239,16 @@ def check_stale(pages, max_days):
         except ValueError:
             continue
         if (today - d).days > max_days:
-            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "updated": updated,
-                             "days_old": (today - d).days})
+            findings.append({"page": rel(vault, page), "updated": updated, "days_old": (today - d).days})
     return findings
 
 
-def check_oversized(pages, max_lines):
+def check_oversized(vault, pages, max_lines):
     findings = []
     for page in pages:
         n = sum(1 for _ in page.open(encoding="utf-8"))
         if n > max_lines:
-            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "lines": n})
+            findings.append({"page": rel(vault, page), "lines": n})
     return findings
 
 
@@ -228,13 +265,15 @@ def check_lancedb_freshness(vault):
     than the latest vault markdown modification time."""
     lancedb = vault.parent / f"{vault.name}-lancedb"
     if not lancedb.exists():
-        return {"status": "no lancedb folder found (expected at {})".format(lancedb)}
+        return {"status": f"lancedb not configured (skip if intentional). Expected at {lancedb}; "
+                          f"set up with openclaw-lancedb-knowledge bootstrap or rerun "
+                          f"init_vault.py without --skip-lancedb."}
     latest_md = max((p.stat().st_mtime for p in vault.rglob("*.md")), default=0)
     latest_index = 0
     for p in lancedb.rglob("*.lance"):
         latest_index = max(latest_index, p.stat().st_mtime)
     if latest_index == 0:
-        return {"status": "no index files in lancedb folder; needs reindex"}
+        return {"status": "lancedb folder exists but contains no index files; run incremental indexer"}
     return {
         "stale": latest_md > latest_index,
         "vault_latest": datetime.datetime.fromtimestamp(latest_md).isoformat(),
@@ -278,8 +317,9 @@ def check_missing_cross_refs(auto_fix: bool):
     """Requires AI to determine semantic similarity between pages."""
     return {
         "status": "stub",
-        "note": "Requires AI runtime. Invoke `@knowledge lint --auto-fix` from inside "
-                "OpenClaw to run the AI cross-ref pass. CLI invocation cannot do this.",
+        "note": "Requires AI runtime. Invoke `Skill openclaw-llm-wiki` inside a Codex/Claude turn "
+                "and ask it to run the cross-ref auto-fill pass (see prompts/lint_missing_cross_refs.md). "
+                "CLI invocation cannot do this.",
         "auto_fix_was_set": auto_fix,
     }
 
@@ -288,12 +328,13 @@ def check_data_gaps():
     """Requires AI + access to other vaults/lancedb/discord history."""
     return {
         "status": "stub",
-        "note": "Requires AI runtime + cross-source search. Invoke from inside OpenClaw "
-                "to run the local-only data-gap auto-fill pass (never web-searches).",
+        "note": "Requires AI runtime + cross-source search. Invoke `Skill openclaw-llm-wiki` inside "
+                "a Codex/Claude turn and ask it to run the data-gap pass (see prompts/lint_data_gaps.md). "
+                "Never web-searches.",
     }
 
 
-def check_contradictions(pages, stem_to_path):
+def check_contradictions(vault, pages, stem_to_path):
     """Scan for pages with frontmatter `contradictions: [target]`. Report:
     - target page missing
     - target page no longer flags this page back (one-sided contradiction)
@@ -319,7 +360,7 @@ def check_contradictions(pages, stem_to_path):
         except ValueError:
             pass
         for target in targets:
-            issue: dict = {"page": str(src_page.relative_to(src_page.parents[len(page.parents)-2])), "target": target}
+            issue: dict = {"page": rel(vault, src_page), "target": target}
             if target not in stem_to_path:
                 issue["problem"] = "target page missing"
             elif src_stem not in forward.get(target, []):
@@ -344,7 +385,10 @@ def main() -> int:
 
     vault = Path(args.vault_path).expanduser().resolve()
     if not vault.exists():
-        print(f"vault not found: {vault}", file=sys.stderr)
+        print(f"vault not found: {vault}\n"
+              f"  hint: create it with `python3 {Path(__file__).parent / 'init_vault.py'} "
+              f"--vault-path {vault} --team <team> --domain \"<one line>\"`",
+              file=sys.stderr)
         return 1
     cfg = load_config(vault / "_meta")
     pages = walk_vault_pages(vault)
@@ -355,19 +399,19 @@ def main() -> int:
         "vault": str(vault),
         "total_pages": len(pages),
         "checks": {
-            "broken_wikilinks": check_broken_wikilinks(pages, stem_to_path),
-            "orphan_pages": check_orphans(pages, stem_to_path),
-            "frontmatter_missing": check_frontmatter_missing(pages),
-            "tag_drift": check_tag_drift(pages, strict_tags),
+            "broken_wikilinks": check_broken_wikilinks(vault, pages, stem_to_path),
+            "orphan_pages": check_orphans(vault, pages, stem_to_path),
+            "frontmatter_missing": check_frontmatter_missing(vault, pages),
+            "tag_drift": check_tag_drift(vault, pages, strict_tags),
             "index_drift": check_index_drift(vault, pages),
-            "stale_pages": check_stale(pages, cfg["stale_page_days"]),
-            "oversized_pages": check_oversized(pages, cfg["oversized_page_lines"]),
+            "stale_pages": check_stale(vault, pages, cfg["stale_page_days"]),
+            "oversized_pages": check_oversized(vault, pages, cfg["oversized_page_lines"]),
             "log_size": check_log_size(vault, cfg["log_rotate_entries"]),
             "lancedb_freshness": check_lancedb_freshness(vault),
             "should_build_but_not_built": check_should_build(vault, pages, cfg["should_build_min_sources"]),
             "missing_cross_refs": check_missing_cross_refs(args.auto_fix),
             "data_gaps": check_data_gaps(),
-            "contradictions": check_contradictions(pages, stem_to_path),
+            "contradictions": check_contradictions(vault, pages, stem_to_path),
         },
     }
 
@@ -393,7 +437,11 @@ def main() -> int:
         log_path = vault / "log.md"
         if log_path.exists():
             with log_path.open("a", encoding="utf-8") as f:
-                f.write(f"\n## [{date}] lint | {issue_count} schema issues | AI-checks pending in agent runtime\n")
+                f.write(
+                    f"\n## [{date}] lint | {issue_count} schema issues | "
+                    f"AI checks pending: missing_cross_refs, data_gaps "
+                    f"(invoke via Skill openclaw-llm-wiki agent turn)\n"
+                )
 
     return 0
 

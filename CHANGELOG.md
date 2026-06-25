@@ -1,5 +1,59 @@
 # Changelog
 
+## v0.5.3 — 2026-06-25 (production-readiness audit pass)
+
+Second-angle review (production-readiness / first-time install / error path) caught 9 real bugs + 5 minor issues that the v0.5.2 consistency pass missed. All 9 must-fixes are addressed below; the minor issues are deferred unless noted otherwise.
+
+**Crash / correctness bugs (the v0.5.2 "fixes" were wrong)**
+
+- `lint.py` path display: v0.5.2's `parents[len(parents)-2]` did not produce vault-relative paths — it produced strings like `tmp/audit-vault/decisions/x.md` (rooted at `/tmp` or `/`). All checks refactored to take `vault` and use a new `rel(vault, page)` helper using `page.relative_to(vault)`. Output now shows `decisions/x.md` cleanly.
+- `lint.parse_strict_tags` regex did not match the default template's `- [ ] \`tag\`` GFM-checkbox format, so `tag_drift` silently always returned 0 on every fresh vault. Regex updated to tolerate `(?:\[[ xX]\]\s*)?` checkbox prefix. Verified: a vault with unregistered `customer-acme` now triggers a finding.
+- `lint.parse_frontmatter` only handled single-line `key: value` and treated YAML block lists (`tags:\n  - foo`) as empty. Rewrote as a small line-walking parser that detects empty-value keys and consumes indented `- item` continuations, joining them with `, ` for downstream regex use. Verified with the smoke test page using block-list tags.
+- `migration_plan.confirm_two_step` returned `bool(b)` — any non-empty string passed step 2. Genuinely dangerous. Refactored to take an `expected` argument and compare exactly; step-2 prompt now says `Type 'X' exactly to confirm`. Mismatch prints `[abort] step 2 mismatch: expected 'X', got '...'`. Verified.
+
+**Git-hygiene bugs**
+
+- `migration_plan.git_commit` and `init_vault.git_init_and_commit` both used `git add -A`, sweeping the user's unrelated dirty working-tree changes into a schema-level commit. Both refactored to stage only an explicit list of paths the operation touched. `git_commit(vault, msg, paths=[...])` enforces this; calling without `paths` now logs a no-op warning instead of silently sweeping WIP.
+- `init_vault.py --overwrite` against an existing git-tracked vault used to leave the vault dirty (templates rewritten but never committed). Now scaffolded paths are tracked through a `scaffolded` list and committed with `chore: re-scaffold ...` as the commit message.
+- Empty Layer-2 folders are now seeded with `.gitkeep` files so Git can track them in the initial commit (previously git committed only the markdown files at vault root, leaving folders untracked).
+
+**Schema-evolution validation**
+
+- `migration_plan.op_rename` accepted any `dst` string, allowing typos to break the schema (e.g. `rename sops nonsense` succeeded). Now validates `dst in LAYER2`. A new `--allow-custom` flag lets advanced users opt out of validation. Same fix in `op_disable` error message (was missing valid-folder list).
+
+**Aspirational-Discord-triggers honesty**
+
+- 10+ doc sites referenced `@knowledge lint`, `@knowledge rollback`, `@智庫 lint` as if shipped. The Discord bot / agent router that wires those mentions to this skill is **not in this repo and not in any sibling repo**. Every mention now says "planned for v0.6" or points at the actual invocation: `Skill openclaw-llm-wiki ...` inside a Codex/Claude turn, or direct `scripts/lint.py` invocation. Affects: SKILL.md, SCHEMA.md template, both prompts, lint.py stub messages, init_vault.py next-steps print, example-mifiya-schema.md.
+
+**README quickstart added**
+
+- README's install section just said `git clone && cp -R` and stopped. First-time user had no idea what to run next. Added an explicit "Quickstart" with example `init_vault.py`, `lint.py`, `migration_plan.py` commands and a note that lancedb is optional on day 1. Python 3.9+ requirement is now stated.
+
+**Cron job e3271517 message**
+
+- The prompt-tuning weekly cron's `message` field used `tag @Jasper（user id 960433085042798623）` (Chinese prose) rather than Discord mention syntax. A Codex agent receiving this might or might not convert it. Updated to explicitly say "use Discord mention syntax `<@960433085042798623>` (not a description)". Also switched the prompts-file references from bare relative paths to absolute `/Users/as_openclaw/.openclaw/workspace/skills/openclaw-llm-wiki/prompts/...` paths so the cron context can find them regardless of working directory.
+- Backup of jobs.json saved as `jobs.json.bak-20260625-2204-before-prompt-tuning-msg-fix`.
+
+**Better error messages**
+
+- `git_commit` warning differentiates "no `user.email` configured" (with concrete fix command) from "nothing to commit".
+- `lancedb_freshness` lint status replaced with "lancedb not configured (skip if intentional). Expected at … ; set up with openclaw-lancedb-knowledge bootstrap or rerun init_vault.py without --skip-lancedb."
+- "vault not found" in both `lint.py` and `migration_plan.py` now suggest the exact `init_vault.py` invocation.
+- LanceDB-bootstrap-not-found warning in `init_vault.py` now points at the lancedb skill repo URL and explains the `--skip-lancedb` fallback.
+
+**Smoke-test matrix (Python 3.9)**
+
+- `init_vault.py --skip-lancedb` (with real Git): commit lands, working tree clean ✓
+- `lint.py` on a vault with a page using block-list YAML tags: `tag_drift` correctly catches `customer-acme` and `product-line-a`; `broken_wikilinks` correctly catches `[[missing-link]]`; paths render as `decisions/d1.md` ✓
+- `migration_plan.py rename sops bogus`: validation rejects with the full LAYER2 list ✓
+- `migration_plan.py enable policies --apply` with wrong step-2 input: aborts cleanly ✓
+
+**Still deferred to v0.6**
+
+- Concurrency lockfile (low priority; lint cron is read-mostly and append-mode log writes are safe on POSIX)
+- `standalone: true` frontmatter opt-out for orphan check
+- `op_disable` `f"_archive/{folder}/"` was actually correct (the f-string IS prefixed) — the audit's "missing `f`" reading was wrong
+
 ## v0.5.2 — 2026-06-25 (same-day audit pass)
 
 Fixes 20 inconsistencies surfaced by an independent cold-read audit + self-scan after v0.5.1.

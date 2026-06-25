@@ -1,8 +1,9 @@
 # Lint check 11 — missing cross-references (AI auto-fill)
 
-> Triggered by `@knowledge lint --auto-fix` from inside an OpenClaw agent session,
-> or as the auto-fix half of the weekly `lint.py` cron. The Python `lint.py` stubs
-> this check and points here; the agent reads this prompt and executes it.
+> Triggered by `Skill openclaw-llm-wiki ... auto-fix` inside an agent session (or
+> the planned-for-v0.6 `@knowledge lint --auto-fix` Discord shortcut), as the
+> auto-fix half of the weekly `lint.py` cron. The Python `lint.py` stubs this
+> check and points here; the agent reads this prompt and executes it.
 
 ## Goal
 

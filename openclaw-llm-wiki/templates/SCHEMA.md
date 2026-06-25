@@ -158,7 +158,7 @@ Reindex triggers:
 
 ## Lint configuration
 
-Run weekly cron + admin can trigger via Discord (`@knowledge lint`).
+Run weekly cron + admin can trigger anytime. Eventual Discord trigger is `@knowledge lint` (router planned for v0.6 — for now invoke via `Skill openclaw-llm-wiki ...` agent turn, or call `scripts/lint.py` from cron).
 
 Active checks (13):
 1. broken wikilinks

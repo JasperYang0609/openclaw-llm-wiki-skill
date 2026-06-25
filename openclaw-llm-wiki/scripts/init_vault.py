@@ -93,15 +93,19 @@ def run(cmd: list[str], cwd: Path) -> int:
     return subprocess.run(cmd, cwd=str(cwd), check=False).returncode
 
 
-def git_init_and_commit(vault: Path, team: str) -> None:
-    if (vault / ".git").exists():
-        print("[git] repo already exists, skipping init")
-        return
-    if run(["git", "init", "-q", "-b", "main"], vault) != 0:
-        print("[warn] git init failed; vault is usable but rollback is unavailable", file=sys.stderr)
-        return
-    # Don't override user's git identity; let Git use system config.
-    # If no identity is configured, the commit will fail with a clear message.
+def git_init_and_commit(vault: Path, team: str, scaffolded_paths: list[str]) -> None:
+    """Initialize Git in `vault` and make an initial commit of only the paths we
+    scaffolded. We deliberately do NOT `git add -A` — if the vault directory
+    already had unrelated files (e.g. user dropped a `.env` or WIP notes there
+    before running init), those should stay out of the schema commit.
+    """
+    fresh = not (vault / ".git").exists()
+    if fresh:
+        if run(["git", "init", "-q", "-b", "main"], vault) != 0:
+            print("[warn] git init failed; vault is usable but rollback is unavailable", file=sys.stderr)
+            return
+    else:
+        print("[git] repo already exists; will stage only scaffolded paths")
     gitignore = vault / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(
@@ -111,17 +115,32 @@ def git_init_and_commit(vault: Path, team: str) -> None:
             ".obsidian/workspace*.json\n",
             encoding="utf-8",
         )
-    run(["git", "add", "-A"], vault)
-    msg = f"init: {team} vault (openclaw-llm-wiki v0.5 layout)"
+        scaffolded_paths.append(".gitignore")
+    # Stage only the paths we scaffolded (never -A).
+    if scaffolded_paths:
+        run(["git", "add", "--"] + scaffolded_paths, vault)
+    msg = (
+        f"init: {team} vault (openclaw-llm-wiki v0.5 layout)" if fresh
+        else f"chore: re-scaffold {team} vault templates (init_vault.py --overwrite)"
+    )
     rc = run(["git", "commit", "-q", "-m", msg], vault)
     if rc == 0:
-        print("[git] initial commit done")
-    else:
-        print(
-            "[warn] initial commit failed (likely missing git user.name/user.email). "
-            "Configure git identity and run `git add -A && git commit` manually.",
-            file=sys.stderr,
+        print(f"[git] committed: {msg}")
+    elif fresh:
+        # Differentiate identity-missing vs no-changes
+        identity = subprocess.run(
+            ["git", "config", "user.email"], cwd=str(vault), check=False, capture_output=True,
         )
+        if identity.returncode != 0 or not identity.stdout.strip():
+            print(
+                "[warn] initial commit failed: no `user.email` configured. "
+                "Run `git config user.email <you@example.com>` (and user.name) in the vault, then `git add . && git commit -m \"init\"`.",
+                file=sys.stderr,
+            )
+        else:
+            print("[warn] initial commit failed (no changes staged? check `git status`)", file=sys.stderr)
+    else:
+        print("[git] no changes to commit (vault already up to date)")
 
 
 def main() -> int:
@@ -166,6 +185,7 @@ def main() -> int:
         "VAULT_PATH": str(vault),
     }
 
+    scaffolded: list[str] = []
     for filename in ("SCHEMA.md", "CLAUDE.md", "AGENTS.md", "index.md", "log.md", "overview.md"):
         target = vault / filename
         if target.exists() and not args.overwrite:
@@ -173,18 +193,27 @@ def main() -> int:
             continue
         render(TEMPLATES / filename, target, replacements)
         print(f"[write] {target}")
+        scaffolded.append(filename)
 
     # _meta/ admin files
     write_active_folders(vault / "_meta", args.team, enabled)
     write_lint_config(vault / "_meta", args.team)
     print(f"[write] {vault / '_meta' / 'active-folders.md'}")
     print(f"[write] {vault / '_meta' / 'lint-config.yaml'}")
+    scaffolded.extend(["_meta/active-folders.md", "_meta/lint-config.yaml"])
+
+    # Empty Layer-2 folders need a .gitkeep so Git can track them
+    for sub in enabled:
+        keep = vault / sub / ".gitkeep"
+        if not keep.exists():
+            keep.write_text("", encoding="utf-8")
+            scaffolded.append(f"{sub}/.gitkeep")
 
     # Git
     if args.skip_git:
         print("[git] skipped (--skip-git)")
     else:
-        git_init_and_commit(vault, args.team)
+        git_init_and_commit(vault, args.team, scaffolded)
 
     # LanceDB
     if args.skip_lancedb:
@@ -193,8 +222,12 @@ def main() -> int:
         bootstrap = Path(args.lancedb_skill) / "scripts" / "bootstrap_openclaw_lancedb.py"
         if not bootstrap.exists():
             print(
-                f"[warn] LanceDB bootstrap not found at {bootstrap}. "
-                "Run it manually later, or pass --lancedb-skill to point at the right folder.",
+                f"[warn] LanceDB bootstrap not found at {bootstrap}.\n"
+                f"  Install openclaw-lancedb-knowledge-skill first: "
+                f"https://github.com/JasperYang0609/openclaw-lancedb-knowledge-skill\n"
+                f"  Or rerun with `--skip-lancedb` if you don't need semantic search yet "
+                f"(text grep still works).\n"
+                f"  Or rerun with `--lancedb-skill <path-to-skill-dir>` to point at a custom install.",
                 file=sys.stderr,
             )
         else:
@@ -221,7 +254,7 @@ def main() -> int:
     print(f"  1. Review and customize {vault / 'SCHEMA.md'} (tag taxonomy, team rules)")
     print(f"  2. Edit {vault / '_meta' / 'active-folders.md'} if you want to enable more folders")
     print("  3. Hook up daily-backup cron to drop summaries into this vault")
-    print("  4. Schedule lint via OpenClaw cron (`@knowledge lint`)")
+    print(f"  4. Schedule lint: `python3 {Path(__file__).parent / 'lint.py'} --vault-path {vault}` via cron")
     return 0
 
 
