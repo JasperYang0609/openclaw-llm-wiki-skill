@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-init_vault.py — bootstrap a team knowledge vault for openclaw-llm-wiki (v0.3).
+init_vault.py — bootstrap a team knowledge vault for openclaw-llm-wiki (v0.5).
 
-Reflects the 2026-06-25 design alignment:
-- 19 Layer-2 folders (folder-on-demand) + 2 system folders (inbox/, _meta/)
+Reflects the 2026-06-25 design alignment + Karpathy-pattern fills:
+- 20 Layer-2 folders (folder-on-demand) + 2 system folders (inbox/, _meta/)
 - Default enabled at init: Core 10 + brand/. Use --enable to add more, --all for all 19.
 - Git auto-commit is enabled by default (initializes Git repo + makes first commit)
 - Wires up openclaw-lancedb-knowledge for semantic search
@@ -55,7 +55,7 @@ the directory.
 
 LINT_CONFIG_TEMPLATE = """# Lint configuration for {team}
 
-# Weekly cron + on-demand via Discord. All 12 checks active by default.
+# Weekly cron + on-demand via Discord. All 13 checks active by default.
 # Adjust thresholds here; do not delete the keys.
 
 stale_page_days: 90
@@ -112,7 +112,7 @@ def git_init_and_commit(vault: Path, team: str) -> None:
             encoding="utf-8",
         )
     run(["git", "add", "-A"], vault)
-    msg = f"init: {team} vault (openclaw-llm-wiki v0.3 layout)"
+    msg = f"init: {team} vault (openclaw-llm-wiki v0.5 layout)"
     rc = run(["git", "commit", "-q", "-m", msg], vault)
     if rc == 0:
         print("[git] initial commit done")
@@ -136,7 +136,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--all", action="store_true",
-        help="Enable all 19 Layer-2 folders (not recommended for new vaults).",
+        help="Enable all 20 Layer-2 folders (not recommended for new vaults).",
     )
     parser.add_argument(
         "--lancedb-skill",

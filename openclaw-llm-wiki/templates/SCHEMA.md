@@ -196,7 +196,7 @@ Append `## [YYYY-MM-DD] lint | N issues found | M auto-fixed` to log.md after ea
 
 ## Off-boarding
 
-- Vault is portable: plain markdown in 19 folders, zip on request
+- Vault is portable: plain markdown in 20 folders, zip on request
 - Client takes their Google API key with them (set at onboarding)
 - Lancedb index can be rebuilt by client (open source)
 - No vendor lock-in
@@ -211,4 +211,4 @@ Append `## [YYYY-MM-DD] lint | N issues found | M auto-fixed` to log.md after ea
 
 ## Version
 
-v0.2 — schema reflects 30-question alignment 2026-06-25. See repo CHANGELOG.md for diff vs v0.1.
+v0.5.1 — schema reflects 30-question alignment 2026-06-25 + Karpathy-pattern fills (summaries/ folder, lint check 13 contradictions). See repo CHANGELOG.md for the full v0.1 → v0.5.1 trail.

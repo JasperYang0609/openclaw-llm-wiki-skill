@@ -112,7 +112,7 @@ def parse_strict_tags(schema_path: Path) -> set[str]:
 
 def walk_vault_pages(vault: Path) -> list[Path]:
     skip_dirs = {".git", "_archive", "inbox", "_meta"}
-    skip_names = {"SCHEMA.md", "CLAUDE.md", "index.md", "log.md", "overview.md"}
+    skip_names = {"SCHEMA.md", "CLAUDE.md", "AGENTS.md", "index.md", "log.md", "overview.md"}
     pages: list[Path] = []
     for path in vault.rglob("*.md"):
         rel = path.relative_to(vault)
@@ -154,11 +154,11 @@ def check_frontmatter_missing(pages):
     for page in pages:
         fm = parse_frontmatter(page.read_text(encoding="utf-8"))
         if fm is None:
-            findings.append({"page": str(page.relative_to(page.parents[-2])), "missing": "all (no frontmatter block)"})
+            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "missing": "all (no frontmatter block)"})
             continue
         missing = REQUIRED_FRONTMATTER - set(fm.keys())
         if missing:
-            findings.append({"page": str(page.relative_to(page.parents[-2])), "missing": sorted(missing)})
+            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "missing": sorted(missing)})
     return findings
 
 
@@ -173,7 +173,7 @@ def check_tag_drift(pages, strict_tags):
         used_strict_candidates = [t for t in tags if t.startswith(("customer-", "product-", "type-"))]
         drift = [t for t in used_strict_candidates if t not in strict_tags]
         if drift:
-            findings.append({"page": str(page.relative_to(page.parents[-2])), "unregistered_strict_tags": drift})
+            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "unregistered_strict_tags": drift})
     return findings
 
 
@@ -201,7 +201,7 @@ def check_stale(pages, max_days):
         except ValueError:
             continue
         if (today - d).days > max_days:
-            findings.append({"page": str(page.relative_to(page.parents[-2])), "updated": updated,
+            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "updated": updated,
                              "days_old": (today - d).days})
     return findings
 
@@ -211,7 +211,7 @@ def check_oversized(pages, max_lines):
     for page in pages:
         n = sum(1 for _ in page.open(encoding="utf-8"))
         if n > max_lines:
-            findings.append({"page": str(page.relative_to(page.parents[-2])), "lines": n})
+            findings.append({"page": str(page.relative_to(page.parents[len(page.parents)-2])), "lines": n})
     return findings
 
 
@@ -319,7 +319,7 @@ def check_contradictions(pages, stem_to_path):
         except ValueError:
             pass
         for target in targets:
-            issue: dict = {"page": str(src_page.relative_to(src_page.parents[-2])), "target": target}
+            issue: dict = {"page": str(src_page.relative_to(src_page.parents[len(page.parents)-2])), "target": target}
             if target not in stem_to_path:
                 issue["problem"] = "target page missing"
             elif src_stem not in forward.get(target, []):

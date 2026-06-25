@@ -11,7 +11,7 @@ Team knowledge base (sales label: **企業智庫 / Enterprise Knowledge Hub**) a
 sources (Discord backups, daily-backup summaries, Notion, URLs, PDFs)
   → openclaw-discord-server-backup / *-daily-backup crons (delegated ingest)
   → inbox/ (AI confidence-gated staging)
-  → classified into 19 Layer-2 folders (this skill's core job)
+  → classified into 20 Layer-2 folders (this skill's core job)
   → openclaw-lancedb-knowledge + grep (delegated dual search)
   → Discord-first source-cited answers
 ```
@@ -108,7 +108,7 @@ Override via env var `OPENCLAW_WIKI_TEAM_PATH` or `--vault-path` argument.
 ## Layer model
 
 - **Layer 1 (inbox/, source backups via lancedb skill):** raw evidence; agent reads, never modifies, never deletes
-- **Layer 2 (decisions/, sops/, ... — the 19 folders):** agent-curated, cross-referenced, schema-enforced
+- **Layer 2 (decisions/, sops/, ... — the 20 folders):** agent-curated, cross-referenced, schema-enforced
 - **Layer 3 (_meta/, SCHEMA.md):** rules — domain definition, taxonomy, thresholds, guardrails
 
 ## Orient before acting (every session)
@@ -253,7 +253,7 @@ Vaults are Git-tracked from initialization. Every action (page create / update /
 ### Off-boarding
 
 Vault is portable by design:
-- It IS just markdown files in 19 folders
+- It IS just markdown files in 20 folders
 - Client receives a zip on request
 - They can rebuild the lancedb index with their own API key (lancedb is open source)
 - No vendor lock-in
@@ -307,7 +307,7 @@ When new info conflicts with existing content:
 - **Vault is for AI, not humans** — do not optimize for human browsability; optimize for AI retrieval and citation accuracy
 - **Never modify `inbox/` files manually** — let the AI promote them via classification; manual edits desync the pipeline
 - **Always orient first** — read SCHEMA + index + recent log + `_meta/` before any operation in a fresh session
-- **Folder-on-demand** — do not pre-create all 19 folders for every client; only what they need
+- **Folder-on-demand** — do not pre-create all 20 folders for every client; only what they need
 - **Frontmatter is non-negotiable** — missing fields = page goes back to inbox/
 - **Strict-tier tags require SCHEMA registration first** — never invent customer or product tags on the fly
 - **Don't index secrets** — `.env`, tokens, credentials are excluded by `openclaw-lancedb-knowledge` by default; don't override

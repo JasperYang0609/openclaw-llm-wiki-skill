@@ -1,7 +1,8 @@
-# Wiki Schema — mifiya (reference example, v0.2)
+# Wiki Schema — mifiya (reference example, v0.5.1)
 
 > Filled-in SCHEMA.md for the Mifiya consulting engagement, aligned to the
-> 19-folder Layer-2 structure + 8-field frontmatter agreed 2026-06-25.
+> 20-folder Layer-2 structure + 8-field frontmatter agreed 2026-06-25
+> (plus Karpathy-pattern fills: summaries/, contradictions lint, CLAUDE/AGENTS aliases).
 > Use this as a starter when adapting `templates/SCHEMA.md` for a new client.
 
 > Customer-facing name: **企業智庫 / Enterprise Knowledge Hub**
@@ -36,7 +37,7 @@ ongoing decision history co-owned by Mifiya's boss and the Ansai consultants.
 title: e.g. "Decision: Q2 2026 pricing update for Mifiya retail line"
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-type: decision   # one of the 19 Layer-2 types
+type: decision   # one of the 20 Layer-2 types
 tags: [phase-2, customer-mifiya, product-retail-line, brand-tone]   # strict tier first
 sources: [meetings/2026-04-12-pricing-discussion.md, raw/notion/pricing-policy-v3.md]
 confidence: high   # 3+ sources cross-validated; "low" for single-source pages
@@ -63,7 +64,7 @@ categories: [decisions, brand]   # multi-category: primary + secondary
   `type-person`, `type-concept`, `type-comparison`, `type-synthesis`, `type-query`,
   `type-brand`, `type-policy`, `type-deliverable`, `type-meeting`, `type-incident`
 
-(Nice-to-have folders not active for Mifiya: metrics/, vendors/, templates/, glossary/)
+(Nice-to-have folders not active for Mifiya: metrics/, vendors/, templates/, glossary/, summaries/ — 15 active of 20)
 
 **Engagement phases**
 - `phase-1`, `phase-2`, `phase-3`

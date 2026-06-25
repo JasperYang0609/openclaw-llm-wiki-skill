@@ -22,11 +22,11 @@ The full skill specification lives at:
 - https://github.com/JasperYang0609/openclaw-llm-wiki-skill (canonical)
 
 The skill defines:
-- 19+1 Layer-2 folders (Core 10 + Recommended 5 + Nice-to-have 5 including `summaries/`)
+- 20 Layer-2 folders (Core 10 + Recommended 5 + Nice-to-have 5 including `summaries/`)
 - 8-field required frontmatter
 - 1-source + AI-filter page threshold
 - AI auto-fill wikilinks (no minimum count enforced)
-- 13 lint checks (9 schema-level fully implemented + 1 should-build approximation + 3 AI-required)
+- 13 lint checks (10 schema-level fully implemented + 1 should-build approximation + 2 AI-required)
 - Discord-first query, no Markdown tables
 - Git auto-commit always on
 

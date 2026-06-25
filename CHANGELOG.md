@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.5.2 — 2026-06-25 (same-day audit pass)
+
+Fixes 20 inconsistencies surfaced by an independent cold-read audit + self-scan after v0.5.1.
+
+**Data-model number consistency** (every "current state" doc now matches)
+- `SKILL.md`: 4 lines that still said "19 folders" → updated to 20 (lines 14, 111, 256, 310)
+- `SCHEMA.md` template: "plain markdown in 19 folders" → 20; version footer "v0.2" → v0.5.1
+- `README.md`: "19 Layer-2 folders" / "19-folder structure" / "Vault structure (19 Layer-2 folders)" all → 20; "12 checks" → 13
+- `CLAUDE.md` template: "9 schema-level + 1 + 3 AI-required" → "10 + 1 + 2" (now matches AGENTS.md); "19+1 Layer-2" → "20 Layer-2"
+- `init_vault.py`: docstring "(v0.3)" → "(v0.5)"; "19 Layer-2" in docstring → 20; LINT_CONFIG_TEMPLATE "All 12 checks" → 13; commit message "v0.3 layout" → "v0.5 layout"; `--all` help "all 19" → "all 20"
+- `migration_plan.py`: docstring "(v0.3)" → "(v0.5)"; "one of the 19 Layer-2 folders" → 20
+- `example-mifiya-schema.md`: header "v0.2" → v0.5.1; "19-folder Layer-2 structure" → 20-folder; "one of the 19 Layer-2 types" → 20; "Nice-to-have folders not active" line clarified to "15 active of 20"
+
+**README bundled-resources list completed**
+- Was missing `CLAUDE.md`, `AGENTS.md`, `overview.md`. All three now listed.
+
+**Bug fix (Python 3.9 compat, second pass)**
+- v0.5 fixed `p.parents[-2]` but missed `page.parents[-2]` (5 sites) and `src_page.parents[-2]` (1 site). All now use `.parents[len(x.parents)-2]` for Python 3.9 compat.
+- This was a real crash bug — `lint.py` would crash with `IndexError: -2` on the first frontmatter-missing or tag-drift hit. Smoke test on Python 3.9 now passes cleanly.
+
+**Bug fix (AGENTS.md not in lint skip list)**
+- `walk_vault_pages` in `lint.py` was missing `AGENTS.md` from `skip_names` (which had `CLAUDE.md` but not the v0.5.1 addition). Without the fix, lint would flag AGENTS.md as an orphan page and report it missing frontmatter. Now skipped correctly.
+
+**Smoke test (Python 3.9)**
+- `init_vault.py --skip-lancedb --skip-git` → writes 6 root files + 11 default folders ✓
+- `lint.py` → 13 checks all run cleanly on the fresh vault, no crashes ✓
+- `migration_plan.py enable summaries` → dry-run preview correct ✓
+
 ## v0.5.1 — 2026-06-25 (same day patch)
 
 Adds `AGENTS.md` as the OpenAI Codex / ChatGPT Codex equivalent of `CLAUDE.md`. Now whichever agent runtime starts up inside a vault — Claude Code, Codex, or OpenClaw — auto-loads the same orientation pointer that directs it to `SCHEMA.md`. This matters because most existing daily-backup crons run on `openai-codex/gpt-5.5` and would otherwise miss the Claude-only file.

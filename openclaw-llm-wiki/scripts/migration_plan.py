@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-migration_plan.py — preview schema-change impact before applying (v0.3).
+migration_plan.py — preview schema-change impact before applying (v0.5).
 
 Implements the "preview impact before commit" guardrail (F24 #2 from the
 2026-06-25 alignment). Dry-run only by default; `--apply` will actually mutate
 the vault but is gated behind a two-step confirmation.
 
 Supported operations:
-    enable <folder>             — activate one of the 19 Layer-2 folders
+    enable <folder>             — activate one of the 20 Layer-2 folders
     disable <folder>            — deactivate (counts pages + inbound links)
     rename <from> <to>          — rename a Layer-2 folder (counts files + wikilinks)
     add-frontmatter-field <key> — count pages missing it; suggest backfill
