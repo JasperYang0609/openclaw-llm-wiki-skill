@@ -43,8 +43,10 @@ Install [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/opencla
 
 - `openclaw-llm-wiki/SKILL.md` — main skill instructions (orient, page rules, query, lint, governance)
 - `openclaw-llm-wiki/templates/` — `SCHEMA.md`, `index.md`, `log.md` for new vault initialization
-- `openclaw-llm-wiki/scripts/init_vault.py` — one-shot vault bootstrap (v0.1 wiring; v0.3 will rewrite for the 19-folder structure)
-- `openclaw-llm-wiki/references/example-mifiya-schema.md` — example filled-in SCHEMA for a marketing-consulting team
+- `openclaw-llm-wiki/scripts/init_vault.py` — one-shot vault bootstrap: 19-folder structure (folder-on-demand) + Git auto-commit + lancedb wiring
+- `openclaw-llm-wiki/scripts/lint.py` — runs 12-check lint (9 schema-level fully implemented; 2 AI-required checks stubbed for agent runtime)
+- `openclaw-llm-wiki/scripts/migration_plan.py` — preview & apply schema changes (`enable` / `disable` / `rename` / `add-frontmatter-field`) with two-step confirmation + Git auto-commit
+- `openclaw-llm-wiki/references/example-mifiya-schema.md` — filled-in SCHEMA reference for a marketing-consulting client
 
 ## Vault structure (19 Layer-2 folders)
 
@@ -64,15 +66,13 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
-**v0.2** — schema and SKILL.md reflect the 30-question design alignment completed 2026-06-25.
+**v0.3** — scripts and reference aligned to the v0.2 schema. SKILL.md / templates unchanged from v0.2.
 
-Outstanding for v0.3:
-- Rewrite `scripts/init_vault.py` for 19-folder structure + Git auto-commit initialization
-- Add `scripts/lint.py` covering all 12 checks
-- Add `scripts/migration_plan.py` for schema evolution preview
-- Update `references/example-mifiya-schema.md` to v0.2 schema
+Outstanding for v0.4+:
+- AI-runtime implementation of lint checks 11 (missing cross-refs) and 12 (data gaps) under `openclaw-llm-wiki/prompts/`
+- F23 pricing decision (deferred to Ansai team)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for v0.1 → v0.2 diff.
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.2 → v0.3 trail.
 
 ## Safety
 

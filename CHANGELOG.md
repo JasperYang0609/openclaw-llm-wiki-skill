@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.3 — 2026-06-25
+
+Scripts and reference example brought in line with the v0.2 schema. SKILL.md / templates were not modified; this release is the implementation layer behind v0.2's design.
+
+**`scripts/init_vault.py` (rewritten)**
+- Creates 19-folder Layer-2 structure + `inbox/` + `_meta/` (folder-on-demand)
+- Default enabled: Core 10 + `brand/` (11 folders)
+- `--enable <folder>` repeatable to add more; `--all` enables all 19
+- Initializes Git + makes first commit by default (skip with `--skip-git`)
+- Writes `_meta/active-folders.md` and `_meta/lint-config.yaml`
+- `--skip-lancedb` short-circuits the lancedb bootstrap for offline / smoke-test runs
+
+**`scripts/lint.py` (new)**
+- 9 schema-level checks fully implemented: broken wikilinks, orphan pages, frontmatter missing, tag drift (strict tier), index drift, stale pages, oversized pages, log size, lancedb freshness
+- 1 Karpathy-pattern check approximated (`should_build_but_not_built` via hashtag/wikilink frequency)
+- 2 Karpathy-pattern checks explicitly stubbed (`missing_cross_refs`, `data_gaps`) — they require an AI runtime and must run from inside an OpenClaw agent session
+- `--json` for machine-readable output; `--auto-fix` flag accepted but no-ops in CLI (passes through to AI runtime)
+- Appends a one-line summary to `log.md` after each run
+
+**`scripts/migration_plan.py` (new)**
+- Dry-run preview for `enable`, `disable`, `rename`, `add-frontmatter-field`
+- `--apply` gated behind two-step confirmation for destructive ops (matches F24 guardrail #4)
+- Auto-commits the change to Git when applied (matches F27 guardrail)
+- Updates `_meta/active-folders.md` on enable/disable/rename
+
+**`references/example-mifiya-schema.md` (rewritten)**
+- Reflects the 8-field frontmatter
+- Lists Mifiya-specific active folders (15 active of 19; metrics/vendors/templates/glossary inactive)
+- Documents the `mifiya-daily-backup` ingest routing
+- Adds privacy / embedding section (Mifiya supplies own Google API key)
+- Adds off-boarding readiness section
+
+### Outstanding for v0.4+
+
+- Lint checks 11 (missing_cross_refs) and 12 (data_gaps) need an AI runtime implementation living in `openclaw-llm-wiki/prompts/`
+- F23 pricing decision still deferred to Ansai team
+- Smoke tests live in CI (not yet bundled)
+
 ## v0.2 — 2026-06-25
 
 Schema and SKILL.md reflect the 30-question design alignment completed with Jasper on 2026-06-25.
