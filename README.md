@@ -46,6 +46,8 @@ Install [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/opencla
 - `openclaw-llm-wiki/scripts/init_vault.py` — one-shot vault bootstrap: 19-folder structure (folder-on-demand) + Git auto-commit + lancedb wiring
 - `openclaw-llm-wiki/scripts/lint.py` — runs 12-check lint (9 schema-level fully implemented; 2 AI-required checks stubbed for agent runtime)
 - `openclaw-llm-wiki/scripts/migration_plan.py` — preview & apply schema changes (`enable` / `disable` / `rename` / `add-frontmatter-field`) with two-step confirmation + Git auto-commit
+- `openclaw-llm-wiki/prompts/lint_missing_cross_refs.md` — AI prompt for lint check 11 (batch auto-link, no admin approval)
+- `openclaw-llm-wiki/prompts/lint_data_gaps.md` — AI prompt for lint check 12 (local sources only; **never** web-search)
 - `openclaw-llm-wiki/references/example-mifiya-schema.md` — filled-in SCHEMA reference for a marketing-consulting client
 
 ## Vault structure (19 Layer-2 folders)
@@ -66,13 +68,15 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
-**v0.3** — scripts and reference aligned to the v0.2 schema. SKILL.md / templates unchanged from v0.2.
+**v0.4** — adds `prompts/` with the AI-runtime instructions for lint checks 11 (missing cross-refs) and 12 (data gaps). Scripts / templates / SKILL.md unchanged from v0.3 except for the new `## AI-runtime lint checks` section pointing at the prompts.
 
-Outstanding for v0.4+:
-- AI-runtime implementation of lint checks 11 (missing cross-refs) and 12 (data gaps) under `openclaw-llm-wiki/prompts/`
-- F23 pricing decision (deferred to Ansai team)
+**Pilot ordering**: Ansai's own vault first (faster feedback loop than waiting on Mifiya), then Mifiya, then other clients. v0.5 will tune the prompts based on pilot data.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.2 → v0.3 trail.
+Outstanding:
+- F23 pricing decision (deferred; early-stage clients onboard free during pilot)
+- v0.5 prompt tuning using Ansai pilot data
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.4 trail.
 
 ## Safety
 

@@ -319,16 +319,28 @@ When new info conflicts with existing content:
 - `templates/SCHEMA.md` — domain-agnostic SCHEMA with placeholders, customized at init
 - `templates/index.md` — initial 19-category sectioned index
 - `templates/log.md` — initial log entry
-- `scripts/init_vault.py` — one-shot vault bootstrap, also wires up lancedb + initializes Git
-- `references/example-mifiya-schema.md` — reference filled-in SCHEMA for a marketing-consulting team
+- `scripts/init_vault.py` — vault bootstrap (19 folders + Git auto-commit + lancedb wiring)
+- `scripts/lint.py` — 12-check lint runner (9 schema-level fully implemented; 2 AI-required delegated to `prompts/`)
+- `scripts/migration_plan.py` — schema-change preview & apply (two-step confirm, Git auto-commit)
+- `prompts/lint_missing_cross_refs.md` — AI prompt for lint check 11
+- `prompts/lint_data_gaps.md` — AI prompt for lint check 12 (local sources only; never web search)
+- `references/example-mifiya-schema.md` — filled-in SCHEMA reference for a marketing-consulting team
+
+## AI-runtime lint checks (delegated to prompts/)
+
+Lint checks 11 (`missing_cross_refs`) and 12 (`data_gaps`) require AI reasoning over vault contents — they cannot run as plain Python. When `scripts/lint.py` reaches those checks it emits a "stub" notice and points at:
+
+- `prompts/lint_missing_cross_refs.md` — auto-add wikilinks between related pages (D16 / E19 authorized batch auto-fill; no per-pair approval)
+- `prompts/lint_data_gaps.md` — fill skeletal pages from **local sources only** (lancedb / Discord backups / daily-backup / Notion / sibling vaults if permitted). **Never web-search** (E20 mode b is forbidden).
+
+When the user triggers `@knowledge lint --auto-fix` in Discord (or as part of the weekly cron), the agent reads these prompt files and executes them against the vault. Both prompts include hard guardrails (skip `inbox/_archive/_meta`, Git auto-commit, never fabricate, etc.).
 
 ## Version
 
-v0.2 — reflects the 30-question alignment completed 2026-06-25. See `CHANGELOG.md` in the repo for full diff vs v0.1.
+v0.4 — adds `prompts/` for the two AI-runtime lint checks (11 + 12). Scripts and templates unchanged from v0.3. See `CHANGELOG.md` in the repo.
 
-Outstanding work for v0.3:
-- Rewrite `scripts/init_vault.py` for 19-category structure + Git auto-commit init
-- Add `scripts/lint.py` covering all 12 checks above
-- Add `scripts/migration_plan.py`
-- Update `references/example-mifiya-schema.md` to the new schema
+Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. v0.5 will tune the prompts based on pilot data.
+
+Outstanding:
 - F23 pricing decision (deferred to Ansai team)
+- v0.5 prompt tuning based on Ansai pilot data

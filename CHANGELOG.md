@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.4 — 2026-06-25
+
+Adds the AI-runtime prompts for lint checks 11 and 12 (the two checks `lint.py` stubs).
+
+**New: `openclaw-llm-wiki/prompts/`**
+- `lint_missing_cross_refs.md` — agent prompt for lint check 11. Authorized batch auto-fill of `[[wikilinks]]` between related pages without per-pair admin approval (D16 / E19). Includes confidence scoring (high / medium / low), per-link insertion-context selection, Git auto-commit, and `do_not_lint: true` escape hatch.
+- `lint_data_gaps.md` — agent prompt for lint check 12. Five gap-detection criteria, local-source-only auto-fill priority (lancedb → Discord → daily-backup → Notion → sibling vaults), at-most-1 auto-fill per page per run, reports remainder to `_meta/lint-data-gaps-YYYY-MM-DD.md`. **Never web-searches** (E20 mode b forbidden, hard guardrail).
+
+**SKILL.md update**
+- New `## AI-runtime lint checks (delegated to prompts/)` section explaining the prompts and when they are triggered (`@knowledge lint --auto-fix` in Discord, or weekly cron).
+- Bundled-resources list now includes both prompt files.
+- Version + outstanding-work footer updated to v0.4.
+
+**README update**
+- Lists the two new prompt files in Contents.
+- Status section notes pilot ordering: Ansai own vault first (faster feedback loop), then Mifiya.
+
+**Pilot ordering decision (2026-06-25)**
+- Mifiya's data feedback loop is slow → Ansai's internal vault becomes the v0.4 pilot for prompt tuning.
+- v0.5 will revisit prompt thresholds and gap-detection rules using Ansai pilot data.
+
+### Outstanding for v0.5+
+
+- Tune both prompts using Ansai pilot data (named-entity extraction quality, gap-detection precision, insertion-location heuristics)
+- F23 pricing decision (deferred to Ansai team; early-stage clients onboard free during pilot)
+- Smoke tests for the prompts (will need a fixture vault + golden output)
+
 ## v0.3 — 2026-06-25
 
 Scripts and reference example brought in line with the v0.2 schema. SKILL.md / templates were not modified; this release is the implementation layer behind v0.2's design.
