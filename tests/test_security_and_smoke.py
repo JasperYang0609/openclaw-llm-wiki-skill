@@ -211,3 +211,245 @@ def test_init_with_skip_git_does_not_create_git(tmp_path):
     vault = tmp_path / "v"
     init_vault(vault, extra_args=["--skip-git"])
     assert not (vault / ".git").exists()
+
+
+# ---- v0.5.5 (Hermes Round 4) regression tests -----------------------------
+
+def _isolated_git_env(home: Path, env_identity: bool = True) -> dict:
+    """Build an env that hides any global/system Git config. Each test gets
+    its own HOME so the host machine's user.email cannot mask a bug."""
+    env = os.environ.copy()
+    env["HOME"] = str(home)
+    env["XDG_CONFIG_HOME"] = str(home / ".xdg")
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # Remove any inherited git identity env vars
+    for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
+              "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        env.pop(k, None)
+    if env_identity:
+        env["GIT_AUTHOR_NAME"] = "Test"
+        env["GIT_AUTHOR_EMAIL"] = "test@example.com"
+        env["GIT_COMMITTER_NAME"] = "Test"
+        env["GIT_COMMITTER_EMAIL"] = "test@example.com"
+    return env
+
+
+def test_v055_init_with_env_only_identity_succeeds(tmp_path):
+    """Hermes I3: env-only `GIT_AUTHOR_IDENT` must be accepted by preflight
+    (v0.5.4 was rejecting it because it only checked `git config user.email`)."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env = _isolated_git_env(home, env_identity=True)
+    result = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "envtest", "--domain", "Env-only identity test",
+         "--skip-lancedb"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, (
+        f"env-only identity init should succeed, got {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert (vault / "SCHEMA.md").exists()
+    # Confirm commit landed
+    log = subprocess.run(["git", "log", "--oneline"], cwd=str(vault),
+                         env=env, capture_output=True, text=True, check=False)
+    assert log.returncode == 0
+    assert "init: envtest vault" in log.stdout
+
+
+def test_v055_init_no_identity_at_all_exits_nonzero_without_writing_scaffold(tmp_path):
+    """Hermes I2: when there is no identity, init should fail BEFORE writing
+    scaffold files (so a retry path doesn't have to deal with stale files)."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env = _isolated_git_env(home, env_identity=False)  # no identity at all
+    result = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "noid", "--domain", "No identity test",
+         "--skip-lancedb"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 3, (
+        f"no-identity init should exit 3, got {result.returncode}\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    # Acceptable: vault may or may not have been created with scaffold files,
+    # but the COMMIT must not have landed (no .git/HEAD, or no commits in log).
+    log = subprocess.run(["git", "log", "--oneline"], cwd=str(vault),
+                         env=env, capture_output=True, text=True, check=False)
+    if log.returncode == 0:
+        assert log.stdout.strip() == "", "no commits should exist on a failed init"
+
+
+def test_v055_init_retry_after_failed_first_run_commits_all_scaffold(tmp_path):
+    """Hermes I2 atomicity: failed init then config identity then retry MUST
+    end up with all scaffold files committed, not just _meta."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    # First run: no identity, should fail
+    env_noid = _isolated_git_env(home, env_identity=False)
+    r1 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "retry", "--domain", "Retry test", "--skip-lancedb"],
+        env=env_noid, capture_output=True, text=True, check=False,
+    )
+    assert r1.returncode == 3
+    # Now configure identity and retry
+    env_id = _isolated_git_env(home, env_identity=True)
+    r2 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "retry", "--domain", "Retry test", "--skip-lancedb"],
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r2.returncode == 0, f"retry should succeed: {r2.stderr}"
+    # After retry, NO file should be left untracked
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), env=env_id,
+        capture_output=True, text=True, check=False,
+    )
+    assert status.stdout.strip() == "", (
+        f"retry left uncommitted files (Hermes I2 regression):\n{status.stdout}"
+    )
+
+
+def test_v055_migration_apply_refuses_to_mutate_when_git_identity_missing(tmp_path):
+    """Hermes I1 core fix: rename --apply must preflight git BEFORE mutation.
+    If preflight fails, neither the rename nor the active-folders update may
+    have happened."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env_id = _isolated_git_env(home, env_identity=True)
+    # Build a vault with policies/ enabled
+    r0 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "atomicity", "--domain", "Atomicity test",
+         "--enable", "policies", "--skip-lancedb"],
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r0.returncode == 0, r0.stderr
+    # Snapshot active-folders.md content
+    af_path = vault / "_meta" / "active-folders.md"
+    af_before = af_path.read_text(encoding="utf-8")
+    # Try rename with NO identity (should refuse)
+    env_noid = _isolated_git_env(home, env_identity=False)
+    r1 = subprocess.run(
+        [sys.executable, str(MIGRATE), "--vault-path", str(vault),
+         "rename", "policies", "custom-folder", "--allow-custom", "--apply"],
+        input="yes\npolicies->custom-folder\n",
+        env=env_noid, capture_output=True, text=True, check=False,
+    )
+    assert r1.returncode == 3, (
+        f"migration should refuse with exit 3, got {r1.returncode}\n"
+        f"stdout: {r1.stdout}\nstderr: {r1.stderr}"
+    )
+    # CRITICAL: policies/ must still exist; custom-folder/ must NOT exist
+    assert (vault / "policies").exists(), "Hermes I1 regression: policies/ moved despite preflight failure"
+    assert not (vault / "custom-folder").exists(), "Hermes I1 regression: custom-folder/ created"
+    # CRITICAL: active-folders.md must be unchanged
+    assert af_path.read_text(encoding="utf-8") == af_before, (
+        "Hermes I1 regression: active-folders.md modified before commit succeeded"
+    )
+
+
+def test_v055_check_should_build_scans_raw_articles_not_just_inbox(tmp_path):
+    """Hermes R3 verification — v0.5.4 fixed this but test was missing.
+    A vault with `inbox/` (default) AND `raw/articles/` should pick up
+    hashtag mentions from raw/, not stop at inbox."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env = _isolated_git_env(home, env_identity=True)
+    subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "scancheck", "--domain", "Scan check",
+         "--skip-lancedb"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    # Add a raw/articles file with a hashtag mentioned twice across two files
+    (vault / "raw" / "articles").mkdir(parents=True, exist_ok=True)
+    (vault / "raw" / "articles" / "a.md").write_text(
+        "Talks about #widget-x and other things.\n", encoding="utf-8")
+    (vault / "raw" / "articles" / "b.md").write_text(
+        "Also references #widget-x in passing.\n", encoding="utf-8")
+    # Run lint --json and verify should_build_but_not_built found widget-x
+    result = subprocess.run(
+        [sys.executable, str(LINT), "--vault-path", str(vault), "--no-log", "--json"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    data = json.loads(result.stdout)
+    candidates = data["checks"]["should_build_but_not_built"]["candidates"]
+    topics = {c["topic"] for c in candidates}
+    assert "widget-x" in topics, (
+        f"Hermes R3 verification: widget-x should be in candidates, got {topics}"
+    )
+
+
+def test_v055_cross_vault_allow_default_deny_on_malformed_yaml(tmp_path):
+    """Hermes I4: malformed allow-list file → default deny."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    meta = tmp_path / "_meta"
+    meta.mkdir()
+    # Missing file → deny
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "default deny" in reason
+    # Malformed: missing version
+    (meta / "cross-vault-allow.yaml").write_text(
+        "allowed_vaults:\n  - path: /tmp/x\n    reason: test\n", encoding="utf-8")
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    # Wrong version
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 99\nallowed_vaults: []\n", encoding="utf-8")
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "version" in reason.lower()
+    # Entry missing reason
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 1\nallowed_vaults:\n  - path: /tmp\n", encoding="utf-8")
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "reason" in reason.lower()
+    # Relative path
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 1\nallowed_vaults:\n  - path: relative/x\n    reason: test\n", encoding="utf-8")
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "absolute" in reason.lower()
+
+
+def test_v055_lancedb_naming_uses_team_slug_not_vault_name(tmp_path):
+    """Hermes M1: when --vault-path basename differs from --team, lint freshness
+    check must look at {team}-lancedb (via _meta/lancedb-config.yaml), not
+    {vault.name}-lancedb."""
+    vault = tmp_path / "differently-named-dir"  # name != team
+    home = tmp_path / "home"
+    home.mkdir()
+    env = _isolated_git_env(home, env_identity=True)
+    subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "myteam", "--domain", "Naming test", "--skip-lancedb"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    cfg = (vault / "_meta" / "lancedb-config.yaml").read_text(encoding="utf-8")
+    assert "myteam-lancedb" in cfg
+    # Now lint — the freshness check should refer to myteam-lancedb, not
+    # differently-named-dir-lancedb.
+    result = subprocess.run(
+        [sys.executable, str(LINT), "--vault-path", str(vault), "--no-log", "--json"],
+        env=env, capture_output=True, text=True, check=False,
+    )
+    data = json.loads(result.stdout)
+    freshness_status = data["checks"]["lancedb_freshness"]["status"]
+    assert "myteam-lancedb" in freshness_status, (
+        f"freshness must reference team slug; got: {freshness_status}"
+    )
+    assert "differently-named-dir-lancedb" not in freshness_status

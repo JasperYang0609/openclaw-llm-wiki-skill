@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _manifest import (  # noqa: E402
     ALL_LAYER2, DEFAULT_ENABLED, SYSTEM, SKILL_VERSION,
     ValidationError, validate_slug, safe_resolve_inside, render_data_block,
-    all_layer2_list,
+    all_layer2_list, git_identity_ok, preflight_git,
 )
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -120,45 +120,31 @@ def write_cross_vault_allow(meta_dir: Path, team: str) -> None:
     target.write_text(CROSS_VAULT_ALLOW_TEMPLATE.format(team=team), encoding="utf-8")
 
 
+LANCEDB_CONFIG_TEMPLATE = """# LanceDB project + target paths for {team}
+#
+# Written at init so `lint.py check_lancedb_freshness` and any other consumer
+# can locate the sibling LanceDB folder by the canonical project slug rather
+# than by `vault.name` (which the user might rename). Don't edit by hand
+# unless you're moving the lancedb folder.
+
+project: {team}
+target_dir_basename: {team}-lancedb   # under vault.parent
+"""
+
+
+def write_lancedb_config(meta_dir: Path, team: str) -> None:
+    (meta_dir / "lancedb-config.yaml").write_text(
+        LANCEDB_CONFIG_TEMPLATE.format(team=team), encoding="utf-8"
+    )
+
+
 def run(cmd: list[str], cwd: Path) -> int:
     return subprocess.run(cmd, cwd=str(cwd), check=False).returncode
 
 
-def _git_identity_configured(vault: Path) -> bool:
-    """Return True iff `user.email` is set (either repo-local or globally).
-    A vault commit can succeed with name + email; we only check email for brevity."""
-    out = subprocess.run(
-        ["git", "config", "user.email"], cwd=str(vault), check=False, capture_output=True,
-    )
-    return out.returncode == 0 and bool(out.stdout.strip())
-
-
-def git_init_and_commit(vault: Path, team: str, scaffolded_paths: list[str]) -> bool:
-    """Initialize Git in `vault` and commit only the explicitly scaffolded paths.
-
-    Returns True on success; False on any non-fatal failure (caller decides if
-    fatal). Never raises. Never uses `git add -A` — schema commits must not
-    sweep the user's unrelated dirty WIP.
-    """
-    fresh = not (vault / ".git").exists()
-    if fresh:
-        if run(["git", "init", "-q", "-b", "main"], vault) != 0:
-            print("[error] git init failed; vault is usable but rollback is unavailable", file=sys.stderr)
-            return False
-    else:
-        print("[git] repo already exists; will stage only scaffolded paths")
-
-    # Preflight: identity must be configured BEFORE we try to commit, so we can
-    # give a clean error before the user sees a generic git failure.
-    if not _git_identity_configured(vault):
-        print(
-            "[error] git user.email is not configured (and no global default). "
-            "Run `git config --global user.email <you@example.com>` and "
-            "`git config --global user.name <Your Name>`, then re-run this script.",
-            file=sys.stderr,
-        )
-        return False
-
+def commit_scaffold(vault: Path, team: str, scaffolded_paths: list[str], fresh: bool) -> bool:
+    """Commit explicitly scaffolded paths. Called AFTER git_init succeeded and
+    identity was verified by `preflight_git`. Never uses `git add -A`."""
     gitignore = vault / ".gitignore"
     if not gitignore.exists():
         gitignore.write_text(
@@ -169,22 +155,42 @@ def git_init_and_commit(vault: Path, team: str, scaffolded_paths: list[str]) -> 
             encoding="utf-8",
         )
         scaffolded_paths.append(".gitignore")
+    # Hermes I2 fix: when the repo already exists (e.g. retry after first run
+    # bailed at preflight), pick up any root scaffold files we wrote this run
+    # OR previously wrote but never committed (untracked + modified-untracked).
+    # We use `git ls-files --others --exclude-standard --modified` to find them.
+    if not fresh:
+        out = subprocess.run(
+            ["git", "ls-files", "--others", "--exclude-standard", "--modified"],
+            cwd=str(vault), capture_output=True, text=True, check=False,
+        )
+        for line in out.stdout.splitlines():
+            line = line.strip()
+            if line and line not in scaffolded_paths:
+                scaffolded_paths.append(line)
     if scaffolded_paths:
         run(["git", "add", "--"] + scaffolded_paths, vault)
-
     msg = (
         f"init: {team} vault (openclaw-llm-wiki v{SKILL_VERSION} layout)" if fresh
-        else f"chore: re-scaffold {team} vault templates (init_vault.py --overwrite)"
+        else f"chore: re-scaffold {team} vault templates (init_vault.py --overwrite or retry)"
     )
-    rc = run(["git", "commit", "-q", "-m", msg], vault)
+    rc = run(["git", "-c", "user.useConfigOnly=true", "commit", "-q", "-m", msg], vault)
     if rc == 0:
         print(f"[git] committed: {msg}")
         return True
-    if fresh:
-        print("[error] initial commit failed (identity is set; check `git status` for staging issues)", file=sys.stderr)
-        return False
-    print("[git] no changes to commit (vault already up to date)")
-    return True
+    # No-changes case (commit failed because nothing to commit) is OK iff repo
+    # already has at least one commit AND no untracked/modified files remain.
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), capture_output=True, text=True, check=False,
+    )
+    if not status.stdout.strip():
+        print("[git] no changes to commit (vault already up to date)")
+        return True
+    print(
+        f"[error] git commit failed; vault has uncommitted changes:\n{status.stdout}",
+        file=sys.stderr,
+    )
+    return False
 
 
 def main() -> int:
@@ -228,6 +234,29 @@ def main() -> int:
         list(ALL_LAYER2) if args.all else (list(DEFAULT_ENABLED) + args.enable)
     ))
 
+    # ---- Git preflight BEFORE any filesystem write (Hermes I2 fix) ------
+    # If the user is going to want a Git-tracked vault (default), refuse to
+    # write any scaffold files until we know `git init` + `git commit` will
+    # actually succeed. Avoids the failure mode where the first run wrote
+    # half a vault but never committed; the retry then ignored existing files.
+    fresh_git = False
+    if not args.skip_git:
+        if vault.exists() and (vault / ".git").exists():
+            ok, reason = preflight_git(vault)
+            if not ok:
+                print(f"[error] git preflight failed: {reason}", file=sys.stderr)
+                return 3
+        else:
+            # Will init below; identity must already be resolvable from the
+            # environment (`git var` reads env vars + global config; no .git
+            # required for global config to resolve).
+            ok, reason = git_identity_ok(Path.cwd() if not vault.exists() else vault.parent)
+            # The check above is best-effort; the strict check happens AFTER
+            # `git init` succeeds. For now we just warn early if identity
+            # is clearly missing system-wide.
+            if not ok and "is not a git repo" not in reason:
+                print(f"[warn] git identity may not be resolvable in this environment: {reason}", file=sys.stderr)
+
     # Create vault root + system folders + enabled Layer-2 folders
     vault.mkdir(parents=True, exist_ok=True)
     for sub in list(SYSTEM) + enabled:
@@ -258,13 +287,16 @@ def main() -> int:
     write_active_folders(vault / "_meta", team_slug, enabled)
     write_lint_config(vault / "_meta", team_slug)
     write_cross_vault_allow(vault / "_meta", team_slug)
+    write_lancedb_config(vault / "_meta", team_slug)
     print(f"[write] {vault / '_meta' / 'active-folders.md'}")
     print(f"[write] {vault / '_meta' / 'lint-config.yaml'}")
     print(f"[write] {vault / '_meta' / 'cross-vault-allow.yaml'}")
+    print(f"[write] {vault / '_meta' / 'lancedb-config.yaml'}")
     scaffolded.extend([
         "_meta/active-folders.md",
         "_meta/lint-config.yaml",
         "_meta/cross-vault-allow.yaml",
+        "_meta/lancedb-config.yaml",
     ])
 
     # Empty Layer-2 folders need a .gitkeep so Git can track them
@@ -274,13 +306,31 @@ def main() -> int:
             keep.write_text("", encoding="utf-8")
             scaffolded.append(f"{sub}/.gitkeep")
 
-    # Git
+    # Git: init if needed, then commit using effective identity.
+    # (The early preflight + identity check above failed loudly before any
+    # files were written, so by now we expect this to succeed.)
     if args.skip_git:
         print("[git] skipped (--skip-git)")
     else:
-        if not git_init_and_commit(vault, team_slug, scaffolded):
-            # Hermes Round 3: git failure is now FATAL. Otherwise rollback
-            # contract ("Git auto-commit always on") becomes a lie.
+        fresh_git = not (vault / ".git").exists()
+        if fresh_git:
+            if run(["git", "init", "-q", "-b", "main"], vault) != 0:
+                print("[error] git init failed; vault has scaffold but no Git tracking", file=sys.stderr)
+                return 3
+        # Now that .git exists (either freshly or pre-existing), use the strict
+        # `git var GIT_AUTHOR_IDENT` check.
+        ok, reason = git_identity_ok(vault)
+        if not ok:
+            print(
+                f"[error] git identity not resolvable in {vault}: {reason}\n"
+                f"  Configure with `git -C {vault} config user.email <you@example.com>` "
+                f"and user.name, OR set env GIT_AUTHOR_NAME/EMAIL + "
+                f"GIT_COMMITTER_NAME/EMAIL, then RE-RUN this script. Existing "
+                f"scaffold files will be picked up on retry.",
+                file=sys.stderr,
+            )
+            return 3
+        if not commit_scaffold(vault, team_slug, scaffolded, fresh_git):
             return 3
 
     # LanceDB

@@ -29,7 +29,10 @@ from pathlib import Path
 
 # Make sibling _manifest importable when invoked by path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _manifest import REQUIRED_FRONTMATTER, LAYER2_TYPES, LINT_CHECK_NAMES, SKILL_VERSION  # noqa: E402
+from _manifest import (  # noqa: E402
+    REQUIRED_FRONTMATTER, LAYER2_TYPES, LINT_CHECK_NAMES, SKILL_VERSION,
+    load_cross_vault_allow,
+)
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
@@ -256,9 +259,21 @@ def check_log_size(vault, max_entries):
 
 
 def check_lancedb_freshness(vault):
-    """Best-effort: check if a sibling -lancedb folder's last index file is older
-    than the latest vault markdown modification time."""
-    lancedb = vault.parent / f"{vault.name}-lancedb"
+    """Best-effort: check if a sibling -lancedb folder's last index file is
+    older than the latest vault markdown modification time.
+
+    v0.5.5: read `_meta/lancedb-config.yaml.target_dir_basename` so we follow
+    the same naming rule init_vault.py used (Hermes M1 fix). Falls back to
+    `{vault.name}-lancedb` only if the config is missing.
+    """
+    cfg_path = vault / "_meta" / "lancedb-config.yaml"
+    target_basename = f"{vault.name}-lancedb"  # fallback
+    if cfg_path.exists():
+        for line in cfg_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("target_dir_basename:"):
+                target_basename = line.split(":", 1)[1].strip()
+                break
+    lancedb = vault.parent / target_basename
     if not lancedb.exists():
         return {"status": f"lancedb not configured (skip if intentional). Expected at {lancedb}; "
                           f"set up with openclaw-lancedb-knowledge bootstrap or rerun "

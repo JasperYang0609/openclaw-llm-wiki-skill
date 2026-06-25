@@ -102,6 +102,8 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
+**v0.5.5** — Hermes Round 4 closure: Git atomicity (preflight BEFORE mutation), strict identity probe via `git -c user.useConfigOnly=true var GIT_AUTHOR_IDENT` (refuses Git's silent `user@host` fabrication), init retry correctness (failed first run + fix identity + retry now commits all scaffold), cross-vault YAML default-deny validator (handles malformed input + version mismatch + bad paths), instruction/data boundary section in CLAUDE/AGENTS + both lint prompts, LanceDB naming via `_meta/lancedb-config.yaml`. 34 pytest tests (27 + 7 Hermes regression). Pending external clearance pending one more Hermes review pass.
+
 **v0.5.4** — Hermes Round 3 hardening pass: closes 2 sandbox blockers (rename `--allow-custom` path escape + `team`/`domain` prompt injection into CLAUDE/AGENTS), 6 important findings (LanceDB path injection, git failure now FATAL, `check_should_build` now scans all source roots, `cross-vault-allow.yaml` schema, Karpathy v2 over-claim downgraded, LAYER2 single-source-of-truth manifest), 3 minor (lint `--fail-on-issues`, cross-refs confidence truth table, stale log template). 27 pytest tests added, all green. Approved for Ansai-internal pilot; **not yet** for米菲亞/external.
 
 **v0.5.3** — production-readiness audit pass: fixes 9 real bugs the consistency pass missed. Highlights: lint path display now actually vault-relative; two-step confirm now actually compares the typed name; `git add -A` removed (no more sweeping user WIP into schema commits); `op_rename` validates `dst`; `parse_strict_tags` regex now matches checkbox-prefixed lines; YAML block-list tags now parse correctly; README quickstart added; aspirational `@knowledge` Discord triggers labeled "planned for v0.6" everywhere.
@@ -119,7 +121,9 @@ Outstanding:
 - v0.6 prompt tuning based on Ansai pilot data
 - v0.6 `overview.md` auto-regeneration cron (monthly)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.4 trail. Independent code review: [`REVIEW_BRIEF.md`](REVIEW_BRIEF.md) (round-3 brief sent to Hermes).
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5.5 trail. Independent code reviews:
+- [`REVIEW_BRIEF.md`](REVIEW_BRIEF.md) — round 3 brief
+- [`REVIEW_BRIEF_R4.md`](REVIEW_BRIEF_R4.md) — round 4 brief (with explicit delivery protocol)
 
 ## Tests
 
@@ -128,7 +132,7 @@ pip install pytest
 pytest tests/
 ```
 
-27 tests across slug validation, prompt-injection containment, sandbox escape, lint exit codes, and end-to-end init. Required Python 3.9+ and `git`.
+34 tests across slug validation, prompt-injection containment, sandbox escape, lint exit codes, end-to-end init, and Hermes Round 4 regression (Git atomicity / env-only identity / init retry / cross-vault default-deny / LanceDB naming / raw-roots scanning). Required Python 3.9+ and `git`. Tests are hermetic (each isolates `HOME` and Git env).
 
 ## Safety
 

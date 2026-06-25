@@ -103,7 +103,7 @@ Override via env var `OPENCLAW_WIKI_TEAM_PATH` or `--vault-path` argument.
 └── summaries/              # Per-source one-pagers (Karpathy v1 digest pattern)
 ```
 
-**Folder-on-demand rule:** Do NOT pre-create empty folders. Onboarding only creates the folders the team will actually use. Small teams may run with just Core 10 + brand/.
+**Folder-on-demand rule:** Do NOT pre-create empty folders. Onboarding only creates the folders the team will actually use. Small teams may run with just the Core 10 + brand/. (v0.5.4's "20 folders" is the catalogue, not the default install.)
 
 ## Layer model
 
@@ -363,7 +363,7 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 
 ## Version
 
-v0.5.4 — Hermes Round 3 hardening: sandbox-validated rename, prompt-injection-safe template rendering, fail-loud git semantics, single-source-of-truth manifest, 27 pytest tests. See CHANGELOG. Layer-2 = 20, lint checks = 13, agent aliases = CLAUDE.md + AGENTS.md.
+v0.5.5 — Hermes Round 4 closure: git preflight BEFORE mutation (atomicity), `git -c user.useConfigOnly=true var` strict identity probe (refuses Git's silent `user@host` fabrication), init retry correctness (failed first run + identity fix → second run picks up untracked scaffold), cross-vault-allow YAML validator (default-deny on any malformed input), instruction/data boundary in CLAUDE/AGENTS + both lint prompts, LanceDB naming via `_meta/lancedb-config.yaml`. 34 pytest tests (+7 Hermes regression). Layer-2 = 20, lint checks = 13.
 
 Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. The first weekly prompt-tuning cron runs Mondays at 09:37 Asia/Taipei and reports to channel 1493072746702311474.
 

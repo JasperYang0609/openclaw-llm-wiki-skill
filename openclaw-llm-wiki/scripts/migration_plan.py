@@ -32,8 +32,44 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _manifest import (  # noqa: E402
     ALL_LAYER2, SKILL_VERSION,
     ValidationError, validate_slug, safe_resolve_inside,
+    git_identity_ok, preflight_git,
 )
 LAYER2 = list(ALL_LAYER2)
+
+
+def preflight_or_die(vault: Path) -> int | None:
+    """Run BEFORE any mutation. Returns None if OK; integer exit code if fail.
+    Use as: `rc = preflight_or_die(vault); if rc is not None: return rc`.
+
+    Hermes I1 fix: ensures we never leave a vault half-mutated because Git
+    refused to commit afterwards.
+    """
+    if not (vault / ".git").exists():
+        print(
+            "[error] vault is not a git repo; refusing to mutate without rollback safety.\n"
+            "  Rerun init_vault.py without --skip-git, or run `git init` in the vault and add an initial commit.",
+            file=sys.stderr,
+        )
+        return 3
+    ok, reason = preflight_git(vault)
+    if not ok:
+        print(f"[error] git preflight failed (mutation refused): {reason}", file=sys.stderr)
+        return 3
+    # Working tree should be clean OR only contain expected dirty paths.
+    # Strict: refuse to mutate if there are any unstaged changes (avoids the
+    # `git add -A`-equivalent dirty-WIP sweep that v0.5.4 already removed).
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), capture_output=True, text=True, check=False,
+    )
+    dirty = status.stdout.strip()
+    if dirty:
+        print(
+            f"[error] vault working tree is not clean; refusing to mutate.\n"
+            f"  Commit or stash these first:\n{dirty}",
+            file=sys.stderr,
+        )
+        return 4
+    return None
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -111,7 +147,10 @@ def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> bool:
               file=sys.stderr)
         return False
     subprocess.run(["git", "add", "--"] + paths, cwd=str(vault), check=False)
-    rc = subprocess.run(["git", "commit", "-q", "-m", msg], cwd=str(vault), check=False).returncode
+    rc = subprocess.run(
+        ["git", "-c", "user.useConfigOnly=true", "commit", "-q", "-m", msg],
+        cwd=str(vault), check=False,
+    ).returncode
     if rc == 0:
         print(f"[git] committed: {msg}")
         return True
@@ -141,6 +180,10 @@ def op_enable(vault: Path, folder: str, apply: bool) -> int:
     if not confirm_two_step(f"\nAbout to enable folder '{folder}/' in {vault}.", folder):
         print("aborted.")
         return 0
+    # Hermes I1 fix: preflight BEFORE any mutation.
+    rc = preflight_or_die(vault)
+    if rc is not None:
+        return rc
     target.mkdir(parents=True, exist_ok=True)
     update_active_folders(vault, folder, active=True)
     # .gitkeep ensures the otherwise-empty new folder is committable
@@ -184,6 +227,9 @@ def op_disable(vault: Path, folder: str, apply: bool) -> int:
     ):
         print("aborted.")
         return 0
+    rc = preflight_or_die(vault)
+    if rc is not None:
+        return rc
     archive = vault / "_archive" / folder
     archive.parent.mkdir(parents=True, exist_ok=True)
     target.rename(archive)
@@ -246,6 +292,9 @@ def op_rename(vault: Path, src: str, dst: str, apply: bool, allow_custom: bool =
     ):
         print("aborted.")
         return 0
+    rc = preflight_or_die(vault)
+    if rc is not None:
+        return rc
     src_path.rename(vault / dst)
     update_active_folders(vault, src, active=False)
     update_active_folders(vault, dst, active=True)
