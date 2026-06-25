@@ -32,7 +32,7 @@ LAYER2 = [
     "decisions", "sops", "customers", "products", "contacts",
     "people", "concepts", "comparisons", "syntheses", "queries",
     "brand", "policies", "deliverables", "meetings", "incidents",
-    "metrics", "vendors", "templates", "glossary",
+    "metrics", "vendors", "templates", "glossary", "summaries",
 ]
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|#]+?)(?:\|[^\]]+)?\]\]")

@@ -39,7 +39,7 @@
 
 ### Incidents
 
-## Nice-to-have 4 (enable if active)
+## Nice-to-have 5 (enable if active)
 
 ### Metrics
 
@@ -48,6 +48,8 @@
 ### Templates
 
 ### Glossary
+
+### Summaries
 
 ---
 

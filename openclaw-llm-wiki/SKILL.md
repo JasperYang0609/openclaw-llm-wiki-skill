@@ -95,11 +95,12 @@ Override via env var `OPENCLAW_WIKI_TEAM_PATH` or `--vault-path` argument.
 ├── meetings/               # Meeting transcripts, consensus records
 ├── incidents/              # Lessons learned, post-mortems
 │
-│   # === Nice-to-have 4 (only if needed) ===
+│   # === Nice-to-have 5 (only if needed) ===
 ├── metrics/                # KPI definitions, formulas
 ├── vendors/                # Suppliers, outsourced partners, tools
 ├── templates/              # Forms, contract templates, proposal templates
-└── glossary/               # Industry-specific terminology dictionary
+├── glossary/               # Industry-specific terminology dictionary
+└── summaries/              # Per-source one-pagers (Karpathy v1 digest pattern)
 ```
 
 **Folder-on-demand rule:** Do NOT pre-create empty folders. Onboarding only creates the folders the team will actually use. Small teams may run with just Core 10 + brand/.
@@ -217,6 +218,7 @@ Run weekly cron + admin can trigger anytime via Discord (`@knowledge lint`).
 10. **應建未建 (should-build-but-not-built)** — topics that 2+ sources mention but no page exists; lists for consultant review
 11. **Missing cross-references** — same-topic pages not interlinked; AI auto-links without consultant review (matches D16 / E19)
 12. **Data gaps** — topics where existing pages are skeletal; reports candidates + auto-searches local sources first (other vaults, lancedb index, Discord history); never web-searches
+13. **Contradictions** — scan `contradictions: [...]` frontmatter for: target page missing, one-sided pairing (target does not flag back), or unresolved for >30 days. Reports for admin to resolve (no auto-fix; contradictions need human judgment).
 
 Append `## [YYYY-MM-DD] lint | N issues found | M auto-fixed` to log.md.
 
@@ -317,10 +319,12 @@ When new info conflicts with existing content:
 ## Bundled resources
 
 - `templates/SCHEMA.md` — domain-agnostic SCHEMA with placeholders, customized at init
-- `templates/index.md` — initial 19-category sectioned index
+- `templates/CLAUDE.md` — agent entry-point pointer (auto-loaded by Claude Code / Codex / OpenClaw when an agent session starts in the vault directory)
+- `templates/index.md` — initial 20-category sectioned index
 - `templates/log.md` — initial log entry
-- `scripts/init_vault.py` — vault bootstrap (19 folders + Git auto-commit + lancedb wiring)
-- `scripts/lint.py` — 12-check lint runner (9 schema-level fully implemented; 2 AI-required delegated to `prompts/`)
+- `templates/overview.md` — top-level synthesis page, regenerated periodically (monthly cron)
+- `scripts/init_vault.py` — vault bootstrap (20 folders + Git auto-commit + lancedb wiring + CLAUDE.md + overview.md scaffold)
+- `scripts/lint.py` — 13-check lint runner (10 schema-level fully implemented; 2 AI-required delegated to `prompts/`; 1 contradictions scan added v0.5)
 - `scripts/migration_plan.py` — schema-change preview & apply (two-step confirm, Git auto-commit)
 - `prompts/lint_missing_cross_refs.md` — AI prompt for lint check 11
 - `prompts/lint_data_gaps.md` — AI prompt for lint check 12 (local sources only; never web search)
@@ -335,12 +339,34 @@ Lint checks 11 (`missing_cross_refs`) and 12 (`data_gaps`) require AI reasoning 
 
 When the user triggers `@knowledge lint --auto-fix` in Discord (or as part of the weekly cron), the agent reads these prompt files and executes them against the vault. Both prompts include hard guardrails (skip `inbox/_archive/_meta`, Git auto-commit, never fabricate, etc.).
 
+## Karpathy v1 / v2 alignment
+
+This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki pattern (2026-02, gist)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) with extensions inspired by [rohitg00's v2 fork](https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2). Alignment summary:
+
+| Karpathy v1 / v2 | This skill (v0.5) |
+|---|---|
+| 3 layers (raw / wiki / schema) | ✅ inbox+lancedb / 19+1 folders / SCHEMA.md + _meta/ |
+| Workflows Ingest / Query / Lint | ✅ Ingest delegated, Query Discord-first, Lint 13 checks |
+| `index.md` + `log.md` | ✅ both, with timestamped prefixes |
+| Wikilinks for cross-refs | ✅ AI auto-fills (no minimum enforced) |
+| Schema doc auto-loaded by agent | ✅ `CLAUDE.md` alias points at `SCHEMA.md` |
+| Per-source summaries | ✅ optional `summaries/` Layer-2 folder (v0.5) |
+| Top-level overview page | ✅ `overview.md` (v0.5, regenerated periodically) |
+| Contradiction detection | ✅ frontmatter + lint check 13 (v0.5) |
+| Confidence scoring (v2 add-on) | ✅ `confidence` frontmatter field (D17) |
+| Supersession of stale claims (v2) | ✅ stale-page lint + contradiction handling |
+| Output formats (table / Marp / chart) | ⚠ deliberate divergence — Discord-first list output only; complex outputs delegated to GPT / Notion |
+| Viewer (Obsidian / Dataview / qmd) | ⚠ deliberate divergence — vault is for AI, not humans; viewer not recommended |
+| Multi-agent runtime support | ⚠ OpenClaw-native; other agents work via `CLAUDE.md` alias but full skill is OpenClaw |
+| Search engine | ⚠ uses `lancedb + grep` dual instead of `qmd` |
+
 ## Version
 
-v0.4 — adds `prompts/` for the two AI-runtime lint checks (11 + 12). Scripts and templates unchanged from v0.3. See `CHANGELOG.md` in the repo.
+v0.5 — adds Karpathy alignment fills: per-source `summaries/` folder, top-level `overview.md`, `CLAUDE.md` agent entry-point alias, contradictions lint check 13. Total Layer-2 folders now 20 (added `summaries/`).
 
-Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. v0.5 will tune the prompts based on pilot data.
+Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. The first weekly prompt-tuning cron runs Mondays at 09:37 Asia/Taipei and reports to channel 1493072746702311474.
 
 Outstanding:
-- F23 pricing decision (deferred to Ansai team)
-- v0.5 prompt tuning based on Ansai pilot data
+- F23 pricing decision (deferred to Ansai team; early-stage clients onboard free during pilot)
+- v0.6 prompt tuning based on Ansai pilot data
+- v0.6 `overview.md` auto-regeneration cron (currently manual)

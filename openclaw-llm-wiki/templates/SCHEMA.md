@@ -31,7 +31,7 @@ Employees do not edit the schema or any vault files directly.
 title: Page title in plain language
 created: YYYY-MM-DD
 updated: YYYY-MM-DD
-type: decision | sop | customer | product | contact | person | concept | comparison | synthesis | query | brand | policy | deliverable | meeting | incident | metric | vendor | template | glossary
+type: decision | sop | customer | product | contact | person | concept | comparison | synthesis | query | brand | policy | deliverable | meeting | incident | metric | vendor | template | glossary | summary
 tags: [from-taxonomy, ...]
 sources: [raw/articles/source-file.md, discord/2026-06-25-channel-name.md, ...]
 confidence: low | medium | high
@@ -70,7 +70,7 @@ Define under {{TEAM_NAME}} below. Examples to seed:
 
 ### Strict-tier Layer-2 types (active for this team)
 
-<!-- Mark which of the 19 categories are active. Folder-on-demand = only enable what the team uses. -->
+<!-- Mark which of the 20 categories are active. Folder-on-demand = only enable what the team uses. -->
 
 - [ ] `type-decision` (decisions/)
 - [ ] `type-sop` (sops/)
@@ -91,6 +91,7 @@ Define under {{TEAM_NAME}} below. Examples to seed:
 - [ ] `type-vendor` (vendors/)
 - [ ] `type-template` (templates/)
 - [ ] `type-glossary` (glossary/)
+- [ ] `type-summary` (summaries/)
 
 ## Page thresholds
 
@@ -103,7 +104,7 @@ Define under {{TEAM_NAME}} below. Examples to seed:
 - **Split a page** when it exceeds ~200 lines — break into sub-topics with cross-links
 - **Archive a page** when fully superseded — move to `_archive/`, remove from index
 
-## Layer-2 category guide (19 folders)
+## Layer-2 category guide (20 folders)
 
 ### Core 10
 
@@ -126,12 +127,13 @@ Define under {{TEAM_NAME}} below. Examples to seed:
 - `meetings/` — meeting transcripts, consensus
 - `incidents/` — lessons learned, post-mortems
 
-### Nice-to-have 4 (only if needed)
+### Nice-to-have 5 (only if needed)
 
 - `metrics/` — KPI definitions, formulas
 - `vendors/` — supplier records (deeper than contacts/)
 - `templates/` — forms, contract templates
 - `glossary/` — industry-specific dictionary
+- `summaries/` — one-pager per ingested source (Karpathy v1 per-source digest pattern); enable when the consultant wants explicit source digests separate from classified pages
 
 **Folder-on-demand**: do not pre-create empty folders. Only open what the team actually uses. Re-evaluate at every schema review.
 
@@ -158,7 +160,7 @@ Reindex triggers:
 
 Run weekly cron + admin can trigger via Discord (`@knowledge lint`).
 
-Active checks (12):
+Active checks (13):
 1. broken wikilinks
 2. orphan pages
 3. frontmatter missing
@@ -171,6 +173,7 @@ Active checks (12):
 10. **應建未建** — multi-source mentions without page
 11. **missing cross-refs** — AI auto-links without admin review
 12. **data gaps** — local-source first auto-fill; NEVER web search
+13. **contradictions** — scan `contradictions: [...]` frontmatter for missing targets, one-sided pairings, or unresolved >30 days
 
 Append `## [YYYY-MM-DD] lint | N issues found | M auto-fixed` to log.md after each run.
 

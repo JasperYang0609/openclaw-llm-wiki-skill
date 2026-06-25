@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.5 — 2026-06-25
+
+Closes three gaps from a direct comparison against [Karpathy's LLM Wiki gist (v1, 2026-02)](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) and [rohitg00's v2 fork](https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2). Adds three new features + a Karpathy alignment table.
+
+**Gap A — per-source summary pattern**
+- New Layer-2 folder `summaries/` (#20, nice-to-have tier). Enable when the team wants explicit per-source one-pagers separate from classified pages. Default disabled — the daily-backup pipeline often makes this redundant.
+- Added `type-summary` and `summary` to `LAYER2_TYPES` in `lint.py`, taxonomy in `SCHEMA.md`, frontmatter `type` enum, `migration_plan.py` LAYER2 list.
+
+**Gap B — top-level overview page**
+- New template `templates/overview.md` — top-level vault synthesis with sections for current state, top-traffic topics, recent decisions/incidents, outstanding contradictions, knowledge gaps, vault health.
+- `init_vault.py` now scaffolds `overview.md` at vault root.
+- Regeneration not yet automated — v0.6 will add a monthly cron.
+
+**Gap C — explicit contradictions lint**
+- New `check_contradictions` in `lint.py` (check #13). Scans frontmatter for `contradictions: [target]` and reports: target page missing, one-sided pairing (target doesn't flag back), or unresolved for >30 days. No auto-fix; contradictions need human judgment.
+- Updated `lint.py` from "12 checks" to "13 checks" in docstring; `SCHEMA.md` lint config updated to list 13 checks.
+
+**CLAUDE.md alias**
+- New template `templates/CLAUDE.md` — agent entry-point pointer. Auto-loaded by Claude Code / Codex / OpenClaw when an agent session starts in the vault directory. Tells the agent to read `SCHEMA.md`, `_meta/active-folders.md`, etc. before doing anything.
+- Closes the implicit-vs-explicit gap with Karpathy's pattern (he uses `CLAUDE.md` / `AGENTS.md` as schema docs; we keep `SCHEMA.md` as the rich rules file but add `CLAUDE.md` as the agent pointer).
+- `init_vault.py` now scaffolds `CLAUDE.md` at vault root from this template.
+
+**SKILL.md — Karpathy alignment table**
+- New section listing each Karpathy v1 / v2 feature and how this skill maps to it. Marks three "deliberate divergences" (output formats / viewers / multi-agent runtime) so anyone comparing the two patterns understands the design intent.
+
+**Bug fix**
+- `lint.py` used `p.parents[-2]` which Python 3.9 pathlib does not support (negative indexing on `_PathParents` was added in 3.10). Replaced with `p.parents[len(p.parents)-2]` for 3.9 compatibility. Confirmed by smoke test on system Python 3.9.
+
+**Smoke test results (Python 3.9)**
+- `init_vault.py` → creates 11 default folders + `SCHEMA.md` / `CLAUDE.md` / `index.md` / `log.md` / `overview.md` / `_meta/` ✓
+- `lint.py` → 13 checks run cleanly on empty vault ✓
+- `migration_plan.py enable summaries` → preview output correct ✓
+
+### Outstanding for v0.6
+
+- Tune prompts using Ansai pilot data (first weekly cron run: 2026-06-29 09:37 Asia/Taipei)
+- Add `overview.md` auto-regeneration cron (monthly)
+- F23 pricing (still deferred)
+
 ## v0.4 — 2026-06-25
 
 Adds the AI-runtime prompts for lint checks 11 and 12 (the two checks `lint.py` stubs).

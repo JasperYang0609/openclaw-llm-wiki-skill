@@ -35,10 +35,10 @@ CORE_10 = [
     "people", "concepts", "comparisons", "syntheses", "queries",
 ]
 RECOMMENDED_5 = ["brand", "policies", "deliverables", "meetings", "incidents"]
-NICE_TO_HAVE_4 = ["metrics", "vendors", "templates", "glossary"]
+NICE_TO_HAVE_5 = ["metrics", "vendors", "templates", "glossary", "summaries"]
 SYSTEM = ["inbox", "_meta"]
 
-ALL_LAYER2 = CORE_10 + RECOMMENDED_5 + NICE_TO_HAVE_4
+ALL_LAYER2 = CORE_10 + RECOMMENDED_5 + NICE_TO_HAVE_5
 DEFAULT_ENABLED = CORE_10 + ["brand"]
 
 ACTIVE_FOLDERS_TEMPLATE = """# Active Layer-2 folders for {team}
@@ -166,7 +166,7 @@ def main() -> int:
         "VAULT_PATH": str(vault),
     }
 
-    for filename in ("SCHEMA.md", "index.md", "log.md"):
+    for filename in ("SCHEMA.md", "CLAUDE.md", "index.md", "log.md", "overview.md"):
         target = vault / filename
         if target.exists() and not args.overwrite:
             print(f"[skip] {target} already exists (use --overwrite to replace)")

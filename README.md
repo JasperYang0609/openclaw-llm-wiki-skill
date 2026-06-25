@@ -44,7 +44,7 @@ Install [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/opencla
 - `openclaw-llm-wiki/SKILL.md` — main skill instructions (orient, page rules, query, lint, governance)
 - `openclaw-llm-wiki/templates/` — `SCHEMA.md`, `index.md`, `log.md` for new vault initialization
 - `openclaw-llm-wiki/scripts/init_vault.py` — one-shot vault bootstrap: 19-folder structure (folder-on-demand) + Git auto-commit + lancedb wiring
-- `openclaw-llm-wiki/scripts/lint.py` — runs 12-check lint (9 schema-level fully implemented; 2 AI-required checks stubbed for agent runtime)
+- `openclaw-llm-wiki/scripts/lint.py` — runs 13-check lint (10 schema-level fully implemented including contradictions scan; 2 AI-required checks stubbed for agent runtime)
 - `openclaw-llm-wiki/scripts/migration_plan.py` — preview & apply schema changes (`enable` / `disable` / `rename` / `add-frontmatter-field`) with two-step confirmation + Git auto-commit
 - `openclaw-llm-wiki/prompts/lint_missing_cross_refs.md` — AI prompt for lint check 11 (batch auto-link, no admin approval)
 - `openclaw-llm-wiki/prompts/lint_data_gaps.md` — AI prompt for lint check 12 (local sources only; **never** web-search)
@@ -54,7 +54,7 @@ Install [`openclaw-lancedb-knowledge`](https://github.com/JasperYang0609/opencla
 
 - **Core 10**: `decisions/` `sops/` `customers/` `products/` `contacts/` `people/` `concepts/` `comparisons/` `syntheses/` `queries/`
 - **Highly recommended 5**: `brand/` `policies/` `deliverables/` `meetings/` `incidents/`
-- **Nice-to-have 4**: `metrics/` `vendors/` `templates/` `glossary/`
+- **Nice-to-have 5**: `metrics/` `vendors/` `templates/` `glossary/` `summaries/`
 - **System 2**: `inbox/` (low-confidence staging) + `_meta/` (admin config)
 
 Folders are created on demand — small teams run with Core 10 + `brand/`.
@@ -68,15 +68,16 @@ Folders are created on demand — small teams run with Core 10 + `brand/`.
 
 ## Status
 
-**v0.4** — adds `prompts/` with the AI-runtime instructions for lint checks 11 (missing cross-refs) and 12 (data gaps). Scripts / templates / SKILL.md unchanged from v0.3 except for the new `## AI-runtime lint checks` section pointing at the prompts.
+**v0.5** — closes 3 Karpathy-v1/v2 alignment gaps: per-source `summaries/` folder (#20 Layer-2, default off), top-level `overview.md` synthesis page, lint check 13 for contradiction scanning. Also adds `CLAUDE.md` agent entry-point alias and a Karpathy alignment table in SKILL.md.
 
-**Pilot ordering**: Ansai's own vault first (faster feedback loop than waiting on Mifiya), then Mifiya, then other clients. v0.5 will tune the prompts based on pilot data.
+**Pilot ordering**: Ansai's own vault first (faster feedback loop than waiting on Mifiya), then Mifiya, then other clients. First weekly prompt-tuning cron runs Mondays 09:37 Asia/Taipei → channel 1493072746702311474.
 
 Outstanding:
 - F23 pricing decision (deferred; early-stage clients onboard free during pilot)
-- v0.5 prompt tuning using Ansai pilot data
+- v0.6 prompt tuning based on Ansai pilot data
+- v0.6 `overview.md` auto-regeneration cron (monthly)
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.4 trail.
+See [`CHANGELOG.md`](CHANGELOG.md) for the v0.1 → v0.5 trail.
 
 ## Safety
 

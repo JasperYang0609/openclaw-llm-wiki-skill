@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-lint.py — openclaw-llm-wiki v0.3 lint runner.
+lint.py — openclaw-llm-wiki v0.5 lint runner.
 
-Runs the 12 checks defined in the SKILL.md and writes a grouped report.
-Schema-level checks (1-9) are fully implemented. Karpathy-pattern checks (10-12)
-that require AI are stubbed with explicit "requires AI runtime" markers — invoke
-those from inside an OpenClaw agent session rather than the bare CLI.
+Runs the 13 checks defined in the SKILL.md and writes a grouped report.
+Schema-level checks (1-9 + 13) are fully implemented. Karpathy-pattern checks
+(10-12) that require AI are stubbed with explicit "requires AI runtime" markers
+— invoke those from inside an OpenClaw agent session rather than the bare CLI.
+
+Check 13 (contradictions) was added in v0.5 to scan for unresolved contradictions
+flagged in page frontmatter — close a gap noted in the Karpathy-pattern review.
 
 Usage:
     python3 lint.py --vault-path ~/.openclaw/wiki/team
@@ -30,7 +33,7 @@ LAYER2_TYPES = {
     "decision", "sop", "customer", "product", "contact", "person",
     "concept", "comparison", "synthesis", "query",
     "brand", "policy", "deliverable", "meeting", "incident",
-    "metric", "vendor", "template", "glossary",
+    "metric", "vendor", "template", "glossary", "summary",
 }
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
@@ -109,10 +112,11 @@ def parse_strict_tags(schema_path: Path) -> set[str]:
 
 def walk_vault_pages(vault: Path) -> list[Path]:
     skip_dirs = {".git", "_archive", "inbox", "_meta"}
+    skip_names = {"SCHEMA.md", "CLAUDE.md", "index.md", "log.md", "overview.md"}
     pages: list[Path] = []
     for path in vault.rglob("*.md"):
         rel = path.relative_to(vault)
-        if rel.name in {"SCHEMA.md", "index.md", "log.md"}:
+        if rel.name in skip_names:
             continue
         if any(part in skip_dirs for part in rel.parts):
             continue
@@ -142,7 +146,7 @@ def check_orphans(pages, stem_to_path):
     for page in pages:
         for target in set(WIKILINK_RE.findall(strip_comments(page.read_text(encoding="utf-8")))):
             inbound[target] += 1
-    return [str(p.relative_to(p.parents[-2])) for p in pages if inbound[p.stem] == 0]
+    return [str(p.relative_to(p.parents[len(p.parents)-2])) for p in pages if inbound[p.stem] == 0]
 
 
 def check_frontmatter_missing(pages):
@@ -289,6 +293,45 @@ def check_data_gaps():
     }
 
 
+def check_contradictions(pages, stem_to_path):
+    """Scan for pages with frontmatter `contradictions: [target]`. Report:
+    - target page missing
+    - target page no longer flags this page back (one-sided contradiction)
+    - contradictions older than 30 days (stale, needs admin resolution)"""
+    today = datetime.date.today()
+    findings = []
+    # First pass: build forward graph of contradictions
+    forward: dict[str, list[str]] = {}
+    for page in pages:
+        fm = parse_frontmatter(page.read_text(encoding="utf-8")) or {}
+        raw = fm.get("contradictions", "")
+        targets = [t.strip() for t in re.findall(r"[\w\-/]+", raw) if t.strip()]
+        if targets:
+            forward[page.stem] = targets
+    # Second pass: validate each edge
+    for src_stem, targets in forward.items():
+        src_page = stem_to_path[src_stem]
+        fm = parse_frontmatter(src_page.read_text(encoding="utf-8")) or {}
+        updated = fm.get("updated", "")
+        days_old = None
+        try:
+            days_old = (today - datetime.date.fromisoformat(updated)).days
+        except ValueError:
+            pass
+        for target in targets:
+            issue: dict = {"page": str(src_page.relative_to(src_page.parents[-2])), "target": target}
+            if target not in stem_to_path:
+                issue["problem"] = "target page missing"
+            elif src_stem not in forward.get(target, []):
+                issue["problem"] = "one-sided contradiction (target does not flag back)"
+            elif days_old is not None and days_old > 30:
+                issue["problem"] = f"stale: unresolved for {days_old} days"
+            else:
+                continue  # healthy contradiction
+            findings.append(issue)
+    return findings
+
+
 # ---- runner ----------------------------------------------------------------
 
 def main() -> int:
@@ -324,6 +367,7 @@ def main() -> int:
             "should_build_but_not_built": check_should_build(vault, pages, cfg["should_build_min_sources"]),
             "missing_cross_refs": check_missing_cross_refs(args.auto_fix),
             "data_gaps": check_data_gaps(),
+            "contradictions": check_contradictions(pages, stem_to_path),
         },
     }
 
