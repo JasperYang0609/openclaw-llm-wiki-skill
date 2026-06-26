@@ -33,6 +33,8 @@ from _manifest import (  # noqa: E402
     ALL_LAYER2, SKILL_VERSION,
     ValidationError, validate_slug, safe_resolve_inside,
     git_identity_ok, preflight_git,
+    GIT_TOOL_COMMIT_ARGS, GIT_COMMIT_NO_VERIFY,
+    head_snapshot, rollback_paths,
 )
 LAYER2 = list(ALL_LAYER2)
 
@@ -125,8 +127,21 @@ def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> bool:
     """Commit specific paths (relative to vault). Returns True on success.
 
     Never `git add -A` — schema-level commits must not sweep user's dirty WIP.
-    On `--apply` operations, callers MUST treat False as fatal (exit non-zero)
-    to preserve the rollback contract.
+    On `--apply` operations, callers MUST treat False as fatal (exit non-zero).
+
+    v0.5.6 (Hermes R5 B1 + I1):
+    - Identity check goes through `git_identity_ok()` (the only Git-blessed
+      way to recognise env-only identity), NOT the old `git config user.email`
+      shortcut, which contradicted the v0.5.5 preflight and rejected legitimate
+      CI env-only setups AFTER the vault had been mutated.
+    - All tool-owned commits run with `commit.gpgsign=false --no-verify` so a
+      user's gpg key / pre-commit hook cannot abort the commit after we
+      already mutated the working tree. Tool-owned commits are deterministic
+      schema/lint operations; bypassing hooks is intentional and documented
+      in SKILL.md.
+
+    Rollback on failure is the CALLER's responsibility (each `op_*` knows what
+    it touched and uses `rollback_paths()` from `_manifest`).
     """
     if not (vault / ".git").exists():
         print("[error] vault is not a git repo; cannot auto-commit. "
@@ -137,18 +152,19 @@ def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> bool:
         print("[error] git_commit called without paths; refusing to sweep dirty WIP",
               file=sys.stderr)
         return False
-    # Preflight identity
-    check_user = subprocess.run(
-        ["git", "config", "user.email"], cwd=str(vault), check=False, capture_output=True,
-    )
-    if check_user.returncode != 0 or not check_user.stdout.strip():
-        print("[error] git commit aborted: no `user.email` configured. "
-              "Run `git config --global user.email <you@example.com>` (and user.name).",
-              file=sys.stderr)
+    ok, reason = git_identity_ok(vault)
+    if not ok:
+        print(
+            f"[error] git commit aborted: identity not resolvable — {reason}. "
+            f"Configure: `git -C {vault} config user.email <you@example.com>` "
+            f"and user.name; OR set GIT_AUTHOR_NAME/EMAIL + "
+            f"GIT_COMMITTER_NAME/EMAIL in the environment.",
+            file=sys.stderr,
+        )
         return False
     subprocess.run(["git", "add", "--"] + paths, cwd=str(vault), check=False)
     rc = subprocess.run(
-        ["git", "-c", "user.useConfigOnly=true", "commit", "-q", "-m", msg],
+        ["git", *GIT_TOOL_COMMIT_ARGS, "commit", "-q", *GIT_COMMIT_NO_VERIFY, "-m", msg],
         cwd=str(vault), check=False,
     ).returncode
     if rc == 0:
@@ -156,6 +172,29 @@ def git_commit(vault: Path, msg: str, paths: list[str] | None = None) -> bool:
         return True
     print(f"[error] git commit failed (rc={rc}); check `git status` in {vault}",
           file=sys.stderr)
+    return False
+
+
+def git_commit_atomic(vault: Path, msg: str, paths: list[str]) -> bool:
+    """Commit with path-scoped rollback on failure.
+
+    Captures HEAD before commit. If the commit fails (signing/hooks/disk/etc.),
+    every path in `paths` is reverted to its HEAD state (or removed if it's
+    new since HEAD) via `rollback_paths()`. This preserves the v0.5.6
+    rollback contract: failed schema ops leave the vault as it was, not
+    half-mutated.
+
+    Callers that have ALREADY done filesystem mutation should call this
+    instead of `git_commit()` and pass the SAME `paths` list that describes
+    what was changed.
+    """
+    pre_head = head_snapshot(vault)
+    ok = git_commit(vault, msg, paths)
+    if ok:
+        return True
+    print(f"[rollback] commit failed — restoring {len(paths)} path(s) to pre-mutation state",
+          file=sys.stderr)
+    rollback_paths(vault, pre_head, paths)
     return False
 
 
@@ -190,10 +229,12 @@ def op_enable(vault: Path, folder: str, apply: bool) -> int:
     keep = target / ".gitkeep"
     if not keep.exists():
         keep.write_text("", encoding="utf-8")
-    ok = git_commit(
+    # v0.5.6: atomic — if commit fails, the new folder + active-folders edit
+    # are rolled back. (Hermes R5 B1 + I1)
+    ok = git_commit_atomic(
         vault,
         f"schema: enable {folder}/",
-        paths=[f"{folder}/.gitkeep", "_meta/active-folders.md"],
+        paths=[folder, "_meta/active-folders.md"],
     )
     return 0 if ok else 3
 
@@ -234,7 +275,9 @@ def op_disable(vault: Path, folder: str, apply: bool) -> int:
     archive.parent.mkdir(parents=True, exist_ok=True)
     target.rename(archive)
     update_active_folders(vault, folder, active=False)
-    ok = git_commit(
+    # v0.5.6: atomic — if commit fails, restore folder/ from HEAD and remove
+    # _archive/folder/. (Hermes R5 B1 + I1)
+    ok = git_commit_atomic(
         vault,
         f"schema: disable {folder}/ (archived {len(pages)} pages; {inbound} links may break)",
         paths=[f"_archive/{folder}", folder, "_meta/active-folders.md"],
@@ -298,7 +341,9 @@ def op_rename(vault: Path, src: str, dst: str, apply: bool, allow_custom: bool =
     src_path.rename(vault / dst)
     update_active_folders(vault, src, active=False)
     update_active_folders(vault, dst, active=True)
-    ok = git_commit(
+    # v0.5.6: atomic — if commit fails, restore src/ from HEAD (which puts the
+    # folder back to its original name and content) and remove dst/. (Hermes R5)
+    ok = git_commit_atomic(
         vault,
         f"schema: rename {src}/ → {dst}/ ({len(pages)} pages; {wikilink_hits} links to review)",
         paths=[src, dst, "_meta/active-folders.md"],

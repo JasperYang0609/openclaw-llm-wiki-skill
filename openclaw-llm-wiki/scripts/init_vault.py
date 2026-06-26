@@ -39,6 +39,7 @@ from _manifest import (  # noqa: E402
     ALL_LAYER2, DEFAULT_ENABLED, SYSTEM, SKILL_VERSION,
     ValidationError, validate_slug, safe_resolve_inside, render_data_block,
     all_layer2_list, git_identity_ok, preflight_git,
+    GIT_TOOL_COMMIT_ARGS, GIT_COMMIT_NO_VERIFY,
 )
 
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -174,7 +175,10 @@ def commit_scaffold(vault: Path, team: str, scaffolded_paths: list[str], fresh: 
         f"init: {team} vault (openclaw-llm-wiki v{SKILL_VERSION} layout)" if fresh
         else f"chore: re-scaffold {team} vault templates (init_vault.py --overwrite or retry)"
     )
-    rc = run(["git", "-c", "user.useConfigOnly=true", "commit", "-q", "-m", msg], vault)
+    # v0.5.6 (Hermes R5 I1): tool-owned commits bypass user gpgsign + hooks
+    # so signing/hooks failure can't leave the vault half-scaffolded with no
+    # commit. See SKILL.md for the rationale.
+    rc = run(["git", *GIT_TOOL_COMMIT_ARGS, "commit", "-q", *GIT_COMMIT_NO_VERIFY, "-m", msg], vault)
     if rc == 0:
         print(f"[git] committed: {msg}")
         return True

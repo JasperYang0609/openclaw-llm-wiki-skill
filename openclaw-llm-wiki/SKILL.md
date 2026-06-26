@@ -363,7 +363,27 @@ This skill is a productized OpenClaw-native version of [Karpathy's LLM Wiki patt
 
 ## Version
 
-v0.5.5 — Hermes Round 4 closure: git preflight BEFORE mutation (atomicity), `git -c user.useConfigOnly=true var` strict identity probe (refuses Git's silent `user@host` fabrication), init retry correctness (failed first run + identity fix → second run picks up untracked scaffold), cross-vault-allow YAML validator (default-deny on any malformed input), instruction/data boundary in CLAUDE/AGENTS + both lint prompts, LanceDB naming via `_meta/lancedb-config.yaml`. 34 pytest tests (+7 Hermes regression). Layer-2 = 20, lint checks = 13.
+v0.5.6 — Hermes Round 5 closure: unify Git identity check across init + migration (drops the stale `git config user.email` shortcut in `migration_plan.git_commit()` that contradicted v0.5.5 preflight); atomic tool-owned commits — all run with `commit.gpgsign=false --no-verify` so user gpg / pre-commit hooks cannot abort a commit after the vault was mutated; path-scoped rollback in `migration_plan` on commit failure (restores touched paths to HEAD); strict cross-vault-allow YAML parser (rejects unknown top-level keys, tab indentation, anchors, scalar `allowed_vaults`, trailing garbage; enforces `vault_root.parent` same-deployment constraint when `vault_root=` is passed); `_isolated_git_env` strips every `GIT_CONFIG_*` override for hermetic tests. 43 pytest tests (+9 Hermes R5 regression). Layer-2 = 20, lint checks = 13.
+
+### Git commit policy (v0.5.6)
+
+Tool-owned commits (in `init_vault.py` and `migration_plan.py --apply`) run with:
+
+```
+git -c user.useConfigOnly=true -c commit.gpgsign=false commit --no-verify ...
+```
+
+This INTENTIONALLY bypasses the user's `commit.gpgsign`, `core.hooksPath`, and `pre-commit` / `commit-msg` hooks. Rationale:
+
+1. These commits are deterministic schema/lint operations the tool owns end-to-end. The tool already validates them; a user content-validation hook has nothing meaningful to add.
+2. v0.5.5 left the vault half-mutated when a user's gpg key was unavailable or their pre-commit hook failed — preflight could not detect those failure modes. v0.5.6 closes that gap by making tool commits unfailable for hooks/signing reasons.
+3. `useConfigOnly=true` still refuses Git's silent `{user}@{host}` fabrication, so commit attribution remains real (not a hostname-derived ghost).
+
+If you want signing/hooks to apply to vault content, run `git commit` yourself on the pages you authored; the tool never sweeps user-curated content into its commits (no `git add -A`).
+
+### v0.5.5 (superseded — commit `197604a`)
+
+Hermes Round 4 closure: git preflight BEFORE mutation (atomicity), `git -c user.useConfigOnly=true var` strict identity probe (refuses Git's silent `user@host` fabrication), init retry correctness, cross-vault-allow YAML validator (default-deny on missing keys / wrong version / etc.), instruction/data boundary, LanceDB naming via `_meta/lancedb-config.yaml`. 34 pytest tests.
 
 Pilot ordering: Ansai's own vault first (faster feedback loop), then Mifiya, then other clients. The first weekly prompt-tuning cron runs Mondays at 09:37 Asia/Taipei and reports to channel 1493072746702311474.
 

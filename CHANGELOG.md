@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.5.6 — 2026-06-26 (Hermes Round 5 closure: commit atomicity, signing bypass, strict YAML)
+
+Closes Hermes Round 5: 1 blocker + 3 important + 4 minor. Test suite grows to 43 (was 34; +9 R5 regression). External client onboarding (米菲亞 / 萊可 / 方成事) gated on the next Hermes review of this version.
+
+### Hermes B1 (BLOCKER — `migration_plan.git_commit()` still rejected env-only identity AFTER mutation) — fixed
+
+- `migration_plan.git_commit()` previously ran `git config user.email` as its identity check. That check is strictly stricter than the v0.5.5 preflight (`git_identity_ok` via `git var GIT_AUTHOR_IDENT`), which accepts env-only `GIT_AUTHOR_NAME/EMAIL + GIT_COMMITTER_NAME/EMAIL`. Result: env-only CI / cron environments passed preflight, then the vault was mutated, then commit was rejected, leaving the vault dirty / half-applied.
+- v0.5.6 replaces the `git config user.email` check with `git_identity_ok(vault)` so init + migration commits agree on what counts as a valid identity.
+- Regression test: `test_v056_migration_apply_with_env_only_identity_commits_cleanly` — env-only identity migration apply now exits 0 AND `git status --porcelain` is empty.
+
+### Hermes I1 (commit-signing / hooks failure still left half-mutated vaults) — fixed
+
+- v0.5.5 preflight detected `commit.gpgsign=true` and only logged a warning — claiming the script "would refuse to mutate anything", which was false. Mutation already happened before commit, and the actual commit call had no `--no-verify` and did not disable signing, so a missing gpg key or failing pre-commit hook left the vault dirty.
+- v0.5.6 introduces the **Git commit policy** (documented in `SKILL.md`): all tool-owned commits run with:
+
+  ```
+  git -c user.useConfigOnly=true -c commit.gpgsign=false commit --no-verify -m ...
+  ```
+
+  Tool-owned commits are deterministic schema/lint operations; the tool already validates content, so user content-validation hooks have nothing to add. Bypass is intentional and documented.
+- For migration ops, also added `git_commit_atomic()` in `migration_plan.py` which captures `head_snapshot(vault)` before commit and calls `rollback_paths()` (in `_manifest`) on commit failure — restores touched paths from HEAD or removes if new.
+- Regression tests: `test_v056_migration_apply_commit_signing_failure_disabled_succeeds`, `test_v056_init_commit_signing_failure_disabled_succeeds`.
+
+### Hermes I2 (cross-vault YAML did not actually fail-closed on all malformed input) — fixed
+
+- v0.5.5 silently ignored unknown top-level keys (so `not: [valid` trailing garbage was tolerated and a valid-prefix file still loaded). v0.5.6 makes the parser strict:
+  - Unknown top-level keys → default-deny
+  - Unknown entry keys → default-deny
+  - Tab indentation anywhere → default-deny
+  - NBSP / ZWSP whitespace anywhere → default-deny
+  - YAML anchor / alias tokens (`&name`, `*name`) → default-deny
+  - `allowed_vaults: <scalar>` (e.g. `/tmp`) → default-deny (must be empty followed by indented `-` list OR exactly `[]`)
+  - Empty / `null` / `~` `path:` values → default-deny
+  - Empty `reason:` → default-deny
+  - Any line not consumed by a known grammar production → default-deny
+- Regression tests (5): `test_v056_cross_vault_allow_rejects_trailing_garbage_after_valid_entry`, `…_rejects_scalar_allowed_vaults`, `…_rejects_tab_indent`, `…_rejects_unknown_top_level_key`, plus v0.5.5's existing 5-sub-case malformed-YAML test still passes.
+
+### Hermes I3 (same-deployment / vault-parent constraint documented but not implemented) — fixed
+
+- `prompts/lint_data_gaps.md` promised that allow-list entries whose resolved path is not under the same OpenClaw deployment's vault parent would default-deny. v0.5.5 never implemented this check.
+- v0.5.6 changes the loader signature to `load_cross_vault_allow(meta_dir, *, vault_root=None)`. When `vault_root=` is passed, every entry's resolved path must be under `vault_root.resolve().parent` or it is default-denied. Backwards-compatible: existing callers that don't pass `vault_root` retain v0.5.5 behaviour for the parser proper.
+- Regression test: `test_v056_cross_vault_allow_rejects_existing_path_outside_vault_parent`.
+
+### Hermes Minor M1 (misleading test name) — fixed
+
+- Renamed `test_v055_init_no_identity_at_all_exits_nonzero_without_writing_scaffold` → `test_v055_init_no_identity_exits_nonzero_without_commit`. The previous name overclaimed "without writing scaffold" but the test allowed scaffold to exist (because v0.5.5 retry path needs partial scaffold). New name is honest: the contract is "exit non-zero AND no commit landed".
+
+### Hermes Minor M2 (`_isolated_git_env` did not remove all `GIT_CONFIG_*` overrides) — fixed
+
+- Test helper now strips every `GIT_CONFIG_*` env var (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`, `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_<n>`, `GIT_CONFIG_VALUE_<n>`) except `GIT_CONFIG_NOSYSTEM=1` which we deliberately set. Closes the hermeticity leak where a CI shell with pre-set `GIT_CONFIG_GLOBAL=/etc/ci-gitconfig` would bypass intended isolation.
+- Regression test: `test_v056_isolated_git_env_hides_GIT_CONFIG_GLOBAL`.
+
+### Hermes Minor M3 (`.md` typo in `lint_data_gaps.md:76`) — fixed
+
+- `lint_data_gaps.md:76` had a stale `_meta/cross-vault-allow.md` reference (correct: `.yaml`). Fixed.
+
+### Hermes Minor M4 (R4 M2/M3/M4 disposition not recorded in repo) — fixed
+
+- New `reviews/round4_findings.md` enumerates all 5 R4 minor findings with their disposition (fixed in v0.5.4 or v0.5.5, with commits cited). Future rounds of consequence will get a sibling `reviews/roundN_findings.md` for release traceability.
+
+### Audit-pattern lesson added (R5 → v0.5.6)
+
+> "Preflight + warning is not the same as preflight + block. A preflight that warns about a risk while subsequent code does nothing to mitigate the warned risk is theatre, not safety."
+
+Documented in this changelog alongside the previous five lessons.
+
+---
+
 ## v0.5.5 — 2026-06-25 (Hermes Round 4 closure: atomicity + boundaries)
 
 Closes Hermes Round 4: 5 important + 5 minor findings, plus a deeper bug Round 4 helped surface (Git's silent `user@host` identity fabrication). Test suite grows to 34 (was 27).

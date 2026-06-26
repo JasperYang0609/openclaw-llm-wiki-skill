@@ -46,17 +46,29 @@ A page is gap-flagged if ANY of:
    **Default-deny** triggers (treat cross-vault search as denied, in ALL of these cases):
    - file missing
    - file unparseable as YAML
-   - `version` key missing or != 1
-   - `allowed_vaults` missing, not a list, or empty
+   - any tab character (only space indentation is allowed)
+   - any non-breaking-space / zero-width-space (paths must use plain ASCII whitespace)
+   - any YAML anchor / alias token (`&name`, `*name`)
+   - any unknown top-level key (only `version` and `allowed_vaults` are recognised)
+   - `version` key missing, non-integer, or != 1
+   - `allowed_vaults:` value that is not empty (followed by indented `- ` entries) AND not exactly `[]`
+   - any entry with an unknown key (only `path` and `reason` are recognised)
    - any entry missing `path:` or `reason:`
-   - any entry whose `path` is not absolute, or doesn't exist on disk
+   - any entry whose `path` is empty / null / not absolute
+   - any entry whose resolved path does not exist on disk
    - any entry whose resolved path is not inside the same OpenClaw deployment's vault parent
+     (this is enforced by the loader when called with `vault_root=`)
+   - any trailing content outside the documented schema
 
-   The Python helper `_manifest.load_cross_vault_allow(meta_dir)` implements
-   exactly these checks and returns `([], reason)` on any failure. Use it.
+   The Python helper `_manifest.load_cross_vault_allow(meta_dir, vault_root=...)`
+   implements exactly these checks and returns `([], reason)` on any failure.
+   Always call it with `vault_root=` set to the currently-active vault so the
+   same-parent constraint is enforced.
 
-   Hermes I4 fix: previously only "missing/empty" was specified, leaving
-   malformed YAML undefined behaviour.
+   Hermes R5 I2/I3 fix (v0.5.6): previously the parser silently ignored
+   unknown top-level keys, accepted a syntactically-invalid file that
+   began with a valid prefix, and never enforced the same-deployment
+   vault-parent constraint even though this prompt promised it.
 5. Access to other configured local sources, in priority order:
    - `openclaw-lancedb-knowledge` index for THIS vault only (semantic search — runs locally; embeddings already computed; no NEW remote API call for the gap-fill itself)
    - `openclaw-discord-server-backup` outputs (Discord channel history summaries)
@@ -73,7 +85,7 @@ A page is gap-flagged if ANY of:
    - b. Discord backup history (`openclaw-discord-server-backup` outputs) for the page title + top entities
    - c. Daily-backup summaries (per-team) for relevant dates / topics
    - d. Notion ingest staging for matching topic
-   - e. (Only if `_meta/cross-vault-allow.md` lists other vaults) — sibling vaults for matching topic
+   - e. (Only if `_meta/cross-vault-allow.yaml` lists other vaults) — sibling vaults for matching topic
 3. **Classify each hit**:
    - `auto-fill candidate`: hit is clearly the same subject AND adds new factual content beyond what's already on the gap page
    - `partial fill`: hit overlaps but needs admin judgment to integrate

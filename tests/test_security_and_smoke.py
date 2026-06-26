@@ -217,11 +217,25 @@ def test_init_with_skip_git_does_not_create_git(tmp_path):
 
 def _isolated_git_env(home: Path, env_identity: bool = True) -> dict:
     """Build an env that hides any global/system Git config. Each test gets
-    its own HOME so the host machine's user.email cannot mask a bug."""
+    its own HOME so the host machine's user.email cannot mask a bug.
+
+    v0.5.6 (Hermes R5 M2): also strip every other `GIT_CONFIG_*` override
+    that a parent shell or CI could leak through. Without this, a CI
+    environment that pre-sets `GIT_CONFIG_GLOBAL=/etc/ci-gitconfig` would
+    bypass our intended isolation and the test would silently use that
+    config instead of the empty isolated HOME.
+    """
     env = os.environ.copy()
     env["HOME"] = str(home)
     env["XDG_CONFIG_HOME"] = str(home / ".xdg")
     env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # Remove every git config override the host might inject. The keys
+    # `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` are
+    # how Git lets the env synthesize a config; if they leak in we lose
+    # hermeticity.
+    for k in list(env.keys()):
+        if k.startswith("GIT_CONFIG_") and k != "GIT_CONFIG_NOSYSTEM":
+            env.pop(k, None)
     # Remove any inherited git identity env vars
     for k in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL",
               "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
@@ -259,9 +273,12 @@ def test_v055_init_with_env_only_identity_succeeds(tmp_path):
     assert "init: envtest vault" in log.stdout
 
 
-def test_v055_init_no_identity_at_all_exits_nonzero_without_writing_scaffold(tmp_path):
-    """Hermes I2: when there is no identity, init should fail BEFORE writing
-    scaffold files (so a retry path doesn't have to deal with stale files)."""
+def test_v055_init_no_identity_exits_nonzero_without_commit(tmp_path):
+    """Hermes R5 M1: v0.5.5 deliberately supports retry after partial scaffold
+    write (`test_v055_init_retry_after_failed_first_run_commits_all_scaffold`).
+    The relevant atomicity contract is therefore: when no identity is
+    resolvable, init MUST exit non-zero AND no commit may land. Scaffold files
+    may or may not exist; the retry path handles either case."""
     vault = tmp_path / "v"
     home = tmp_path / "home"
     home.mkdir()
@@ -453,3 +470,256 @@ def test_v055_lancedb_naming_uses_team_slug_not_vault_name(tmp_path):
         f"freshness must reference team slug; got: {freshness_status}"
     )
     assert "differently-named-dir-lancedb" not in freshness_status
+
+
+# ---- v0.5.6 (Hermes Round 5) regression tests -----------------------------
+
+def test_v056_migration_apply_with_env_only_identity_commits_cleanly(tmp_path):
+    """Hermes R5 B1: env-only Git identity must reach a clean commit through
+    migration_plan.py --apply. v0.5.5 mutated then rejected at git_commit
+    time; v0.5.6 unifies identity check so env-only passes both preflight
+    AND commit, leaving the vault clean."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env_id = _isolated_git_env(home, env_identity=True)
+    r0 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "envmig", "--domain", "Env migration",
+         "--skip-lancedb"],
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r0.returncode == 0, r0.stderr
+    r1 = subprocess.run(
+        [sys.executable, str(MIGRATE), "--vault-path", str(vault),
+         "enable", "policies", "--apply"],
+        input="yes\npolicies\n",
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r1.returncode == 0, (
+        f"env-only identity migration apply should succeed under v0.5.6 "
+        f"(Hermes R5 B1); got rc={r1.returncode}\nstdout: {r1.stdout}\nstderr: {r1.stderr}"
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), env=env_id,
+        capture_output=True, text=True, check=False,
+    )
+    assert status.stdout.strip() == "", (
+        f"working tree must be clean after successful migration; got:\n{status.stdout}"
+    )
+    log = subprocess.run(["git", "log", "--oneline"], cwd=str(vault), env=env_id,
+                         capture_output=True, text=True, check=False)
+    assert "schema: enable policies/" in log.stdout
+
+
+def test_v056_migration_apply_commit_signing_failure_disabled_succeeds(tmp_path):
+    """Hermes R5 I1: with global commit.gpgsign=true + unusable key,
+    migration apply must STILL succeed because tool-owned commits run with
+    -c commit.gpgsign=false --no-verify. The user's signing config is
+    intentionally bypassed for tool commits (documented in SKILL.md)."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env_id = _isolated_git_env(home, env_identity=True)
+    # Build vault first
+    r0 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "gpgmig", "--domain", "GPG migration",
+         "--skip-lancedb"],
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r0.returncode == 0, r0.stderr
+    # Force-enable signing with an unusable key (gpg not installed in CI is fine)
+    subprocess.run(["git", "config", "commit.gpgsign", "true"], cwd=str(vault),
+                   env=env_id, check=False)
+    subprocess.run(["git", "config", "user.signingkey", "DEADBEEFDEADBEEF"],
+                   cwd=str(vault), env=env_id, check=False)
+    r1 = subprocess.run(
+        [sys.executable, str(MIGRATE), "--vault-path", str(vault),
+         "enable", "policies", "--apply"],
+        input="yes\npolicies\n",
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r1.returncode == 0, (
+        f"gpgsign=true with bad key MUST be bypassed by tool-owned commits "
+        f"under v0.5.6 (Hermes R5 I1); got rc={r1.returncode}\n"
+        f"stdout: {r1.stdout}\nstderr: {r1.stderr}"
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), env=env_id,
+        capture_output=True, text=True, check=False,
+    )
+    assert status.stdout.strip() == "", (
+        f"working tree must be clean even with gpgsign=true; got:\n{status.stdout}"
+    )
+
+
+def test_v056_init_commit_signing_failure_disabled_succeeds(tmp_path):
+    """Hermes R5 I1: fresh init under a HOME with commit.gpgsign=true must
+    succeed, because tool-owned commits run with gpgsign=false + --no-verify."""
+    vault = tmp_path / "v"
+    home = tmp_path / "home"
+    home.mkdir()
+    env_id = _isolated_git_env(home, env_identity=True)
+    # Pre-seed a global .gitconfig that turns on signing
+    (home / ".gitconfig").write_text(
+        "[commit]\n  gpgsign = true\n"
+        "[user]\n  signingkey = DEADBEEFDEADBEEF\n",
+        encoding="utf-8",
+    )
+    r0 = subprocess.run(
+        [sys.executable, str(INIT), "--vault-path", str(vault),
+         "--team", "gpginit", "--domain", "GPG init",
+         "--skip-lancedb"],
+        env=env_id, capture_output=True, text=True, check=False,
+    )
+    assert r0.returncode == 0, (
+        f"init with global commit.gpgsign=true MUST succeed under v0.5.6 "
+        f"(Hermes R5 I1); got rc={r0.returncode}\n"
+        f"stdout: {r0.stdout}\nstderr: {r0.stderr}"
+    )
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(vault), env=env_id,
+        capture_output=True, text=True, check=False,
+    )
+    assert status.stdout.strip() == "", (
+        f"working tree must be clean after init with signing enabled; got:\n{status.stdout}"
+    )
+    log = subprocess.run(["git", "log", "--oneline"], cwd=str(vault), env=env_id,
+                         capture_output=True, text=True, check=False)
+    assert "init: gpginit vault" in log.stdout
+
+
+def test_v056_cross_vault_allow_rejects_trailing_garbage_after_valid_entry(tmp_path):
+    """Hermes R5 I2: a syntactically-invalid file that begins with a valid
+    prefix MUST default-deny — v0.5.5 silently loaded `/tmp` from such a file."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    meta = tmp_path / "_meta"
+    meta.mkdir()
+    payload = (
+        "version: 1\n"
+        "allowed_vaults:\n"
+        "  - path: /tmp\n"
+        "    reason: ok\n"
+        "not: [valid\n"  # trailing garbage
+    )
+    (meta / "cross-vault-allow.yaml").write_text(payload, encoding="utf-8")
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == [], (
+        f"trailing garbage after valid entry MUST default-deny; got allowed={allowed}, reason={reason}"
+    )
+    assert ("default deny" in reason) or ("unknown top-level key" in reason)
+
+
+def test_v056_cross_vault_allow_rejects_existing_path_outside_vault_parent(tmp_path):
+    """Hermes R5 I3: when vault_root is given, an existing absolute path that
+    is NOT under vault_root.parent MUST default-deny, even if it exists."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    deployment = tmp_path / "deployment"
+    deployment.mkdir()
+    active = deployment / "vault-active"
+    active.mkdir()
+    sibling = deployment / "vault-sibling"
+    sibling.mkdir()
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    meta = active / "_meta"
+    meta.mkdir()
+
+    # Same-parent path → allowed
+    (meta / "cross-vault-allow.yaml").write_text(
+        f"version: 1\n"
+        f"allowed_vaults:\n"
+        f"  - path: {sibling}\n"
+        f"    reason: sibling\n",
+        encoding="utf-8",
+    )
+    allowed, reason = load_cross_vault_allow(meta, vault_root=active)
+    assert allowed == [sibling.resolve()], (
+        f"sibling vault under same parent should be allowed; got {allowed}, reason={reason}"
+    )
+
+    # Path outside vault parent → denied even though it exists
+    (meta / "cross-vault-allow.yaml").write_text(
+        f"version: 1\n"
+        f"allowed_vaults:\n"
+        f"  - path: {outside}\n"
+        f"    reason: not sibling\n",
+        encoding="utf-8",
+    )
+    allowed, reason = load_cross_vault_allow(meta, vault_root=active)
+    assert allowed == [], (
+        f"path outside vault parent must default-deny; got {allowed}, reason={reason}"
+    )
+    assert "vault parent" in reason
+
+
+def test_v056_cross_vault_allow_rejects_scalar_allowed_vaults(tmp_path):
+    """Hermes R5 I2: `allowed_vaults: /tmp` (scalar, not list) MUST default-deny."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    meta = tmp_path / "_meta"
+    meta.mkdir()
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 1\nallowed_vaults: /tmp\n", encoding="utf-8",
+    )
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "allowed_vaults" in reason and "empty" in reason
+
+
+def test_v056_cross_vault_allow_rejects_tab_indent(tmp_path):
+    """Hermes R5 I2: any tab character anywhere in the YAML MUST default-deny."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    meta = tmp_path / "_meta"
+    meta.mkdir()
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 1\nallowed_vaults:\n\t- path: /tmp\n\t  reason: ok\n",
+        encoding="utf-8",
+    )
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "tab" in reason.lower()
+
+
+def test_v056_cross_vault_allow_rejects_unknown_top_level_key(tmp_path):
+    """Hermes R5 I2: any top-level key beyond {version, allowed_vaults} MUST
+    default-deny (was silently ignored in v0.5.5)."""
+    sys.path.insert(0, str(SCRIPTS))
+    from _manifest import load_cross_vault_allow  # noqa: E402
+
+    meta = tmp_path / "_meta"
+    meta.mkdir()
+    (meta / "cross-vault-allow.yaml").write_text(
+        "version: 1\nallowed_vaults: []\nrogue_key: surprise\n",
+        encoding="utf-8",
+    )
+    allowed, reason = load_cross_vault_allow(meta)
+    assert allowed == []
+    assert "unknown top-level key" in reason
+
+
+def test_v056_isolated_git_env_hides_GIT_CONFIG_GLOBAL(tmp_path, monkeypatch):
+    """Hermes R5 M2: _isolated_git_env must strip GIT_CONFIG_* override vars
+    so a parent shell or CI cannot leak a hostile config into a test."""
+    home = tmp_path / "home"
+    home.mkdir()
+    hostile = tmp_path / "hostile.gitconfig"
+    hostile.write_text("[user]\n  email = pwned@example.com\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(hostile))
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "user.email")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "leak@example.com")
+    env = _isolated_git_env(home, env_identity=True)
+    assert "GIT_CONFIG_GLOBAL" not in env, "GIT_CONFIG_GLOBAL leaked through isolation"
+    assert "GIT_CONFIG_COUNT" not in env, "GIT_CONFIG_COUNT leaked"
+    assert "GIT_CONFIG_KEY_0" not in env, "GIT_CONFIG_KEY_0 leaked"
+    assert "GIT_CONFIG_VALUE_0" not in env, "GIT_CONFIG_VALUE_0 leaked"
+    assert env["GIT_CONFIG_NOSYSTEM"] == "1", "GIT_CONFIG_NOSYSTEM must remain set"
